@@ -10,7 +10,7 @@
 using std::shared_ptr;
 using std::cout, std::endl;
 using std::vector;
-using Eigen::VectorXd;
+using Eigen::ArrayXd;
 
 class Prokaryotic;
 
@@ -41,7 +41,7 @@ class MoleculeVals : public Printable
 {
 public:
   const Prokaryotic& pro_;
-  Eigen::VectorXd vals_;
+  Eigen::ArrayXd vals_;
   
   MoleculeVals(const Prokaryotic& pro);
   
@@ -105,8 +105,9 @@ public:
   std::string name_;
   double um3_;
 //  ReactionTable reaction_table_;
-  MoleculeVals cytosol_contents_;
+  MoleculeVals cytosol_concentrations_;
   MoleculeVals membrane_contents_;
+  MoleculeVals membrane_permeabilities_;
   
   Cell(const Prokaryotic& pro, const std::string& name);
 
@@ -178,7 +179,7 @@ std::string MoleculeType::_str() const
 MoleculeVals::MoleculeVals(const Prokaryotic& pro) :
   pro_(pro)
 {
-  vals_ = VectorXd::Zero(MoleculeType::num_molecule_types_);
+  vals_ = ArrayXd::Zero(MoleculeType::num_molecule_types_);
 }
 
 std::string MoleculeVals::_str() const
@@ -225,26 +226,34 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   pro_(pro),
   name_(name),
   um3_(0.6),
-  cytosol_contents_(pro_),
-  membrane_contents_(pro_)
-{}
+  cytosol_concentrations_(pro_),
+  membrane_contents_(pro_),
+  membrane_permeabilities_(pro_)
+{
+  membrane_permeabilities_["R"] = 0.005;
+  membrane_permeabilities_["Phosphate"] = 0.1;
+}
 
 std::string Cell::_str() const
 {
   std::ostringstream oss;
   oss << "Cell \"" << name_ << "\"" << endl;
   oss << "  um3_: " << um3_ << endl;
-  oss << "  cytosol_contents_: " << endl << cytosol_contents_.str("    ") << endl;
+  oss << "  cytosol_concentrations_: " << endl << cytosol_concentrations_.str("    ") << endl;
   oss << "  membrane_contents_: " << endl << membrane_contents_.str("    ") << endl;
   return oss.str();
 }
 
 void Cell::tick(const Biome& biome)
 {
-  // Determine new cell contents as things permeate the membrane (in both directions)
+  // Passive membrane permeations
+  auto deltas = (biome.concentrations_.vals_ - cytosol_concentrations_.vals_);
+  auto step = membrane_permeabilities_.vals_ * deltas;
+  cytosol_concentrations_.vals_ += step;
   
-  
-  // Run reactions in cell
+  // In-cell reactions
+  cytosol_concentrations_["R"] = std::max(0.0, cytosol_concentrations_["R"] - 0.1);
+  cytosol_concentrations_["Phosphate"] -= 0.5;
 }
 
 Prokaryotic::Prokaryotic()
@@ -262,11 +271,12 @@ Prokaryotic::Prokaryotic()
     cout << mt->str() << endl;
 
   cells_.push_back(Cell::Ptr(new Cell(*this, "aoeu")));
-  cout << "Cell: " << endl;
   
   biomes_.push_back(Biome::Ptr(new Biome(*this, 10, "Alkaline vents")));
   biomes_[0]->concentrations_["Phosphate"] = 24;
   biomes_[0]->concentrations_["R"] = 10;
+
+  cells_[0]->cytosol_concentrations_.vals_ = biomes_[0]->concentrations_.vals_;
 
   cout << str() << endl;
 }
