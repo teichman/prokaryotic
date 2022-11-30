@@ -1,3 +1,4 @@
+#include <Eigen/Dense>
 #include <cassert>
 #include <sstream>
 #include <vector>
@@ -33,7 +34,7 @@ public:
   }
 };
 
-// Superclass for proteins and small molecules
+// Superclass for proteins and small molecules, both of which we will just call "Molecules".
 class MoleculeType : public Printable
 {
 public:
@@ -48,11 +49,12 @@ public:
 
   MoleculeType(const std::string& name, const std::string& symbol, double daltons);
   MoleculeType(const std::string& name, const std::string& symbol, const std::vector<MoleculeType::Ptr>& constituents);
-  virtual std::string _str() const;
+  std::string _str() const;
   static size_t numMoleculeTypes() { return num_molecule_types_; }
   
 private:
   static size_t num_molecule_types_;
+  friend class MoleculeCounts;
 };
 
 size_t MoleculeType::num_molecule_types_ = 0;
@@ -91,6 +93,30 @@ std::string MoleculeType::_str() const
   oss << "  daltons_: " << daltons_ << endl;
   return oss.str();
 }
+
+class MoleculeCounts : public Printable
+{
+public:
+  std::vector<size_t> counts_;
+  
+  MoleculeCounts();
+  std::string _str() const;
+};
+
+
+MoleculeCounts::MoleculeCounts()
+{
+  counts_.resize(MoleculeType::num_molecule_types_, 0);
+}
+
+std::string MoleculeCounts::_str() const
+{
+  std::ostringstream oss;
+  for (size_t num : counts_)
+    oss << num << endl;
+  return oss.str();
+}
+
 
 class Biome : public Printable
 {
@@ -133,6 +159,36 @@ public:
   } 
 };
 
+class Cell : public Printable
+{
+public:
+  typedef std::shared_ptr<Cell> Ptr;
+  typedef std::shared_ptr<const Cell> ConstPtr;
+
+  double um3_;
+//  ReactionTable reaction_table_;
+  MoleculeCounts cytosol_contents_;
+  MoleculeCounts membrane_contents_;
+  
+  Cell();
+
+  std::string _str() const;
+  
+};
+
+Cell::Cell() :
+  um3_(0.6)
+{}
+
+std::string Cell::_str() const
+{
+  std::ostringstream oss;
+  oss << "um3_: " << um3_ << endl;
+  oss << "cytosol_contents_: " << endl << cytosol_contents_.str("  ") << endl;
+  oss << "membrane_contents_: " << endl << membrane_contents_.str("  ") << endl;
+  return oss.str();
+}
+
 Prokaryotic::Prokaryotic()
 {
   // addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP", ":bang:", 503.15)));
@@ -146,6 +202,10 @@ Prokaryotic::Prokaryotic()
 
   for (auto mt : molecule_types_)
     cout << mt->str() << endl;
+
+  Cell cell;
+  cout << "Cell: " << endl;
+  cout << cell.str("  ") << endl;
 }
 
 void Prokaryotic::addMoleculeType(MoleculeType::Ptr mt)
