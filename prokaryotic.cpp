@@ -118,7 +118,10 @@ public:
   void tick(const Biome& biome);
   MoleculeVals cytosolConcentrations() const;  // mM
   static MoleculeVals cytosolConcentrations(const Prokaryotic& pro, MoleculeVals cytosol_contents, double um3);  // mM
+  // concentrations is mM
   void setCytosolContentsByConcentrations(const MoleculeVals& cytosol_concentrations);
+  // concentrations is mM
+  static MoleculeVals cytosolContents(const Prokaryotic& pro, const MoleculeVals& cytosol_concentrations, double um3);
 };
 
 class ReactionType : public Printable
@@ -335,17 +338,6 @@ std::string Cell::_str() const
 
 MoleculeVals Cell::cytosolConcentrations(const Prokaryotic& pro, MoleculeVals cytosol_contents, double um3)
 {
-  // We want moles per L.
-  // We have counts per um3.
-  // liters/cell = (um3 / 1e15)
-  // molecules/L = count / (um3 / 1e15)
-  // moles/L = count / ((um3 / 1e15) * 6.02e23)
-  // moles/L = count / (um3 * 6.02e8)
-  // Actually we want mM, so millimoles
-  // millimoles/L = 1e6 * count / (um3 * 6.02e8)
-  // millimoles/L = count / (um3 * 6.02e2)
-
-
   // millimoles = 1e3 * (num / 6e23)
   // liters = um3 * 1e-15, bc um3 is fL.
   // mM = 1e3 * (num / 6e23) / (um3 * 1e-15)
@@ -361,9 +353,16 @@ MoleculeVals Cell::cytosolConcentrations() const
   return cytosolConcentrations(pro_, cytosol_contents_, um3_);
 }
 
+MoleculeVals Cell::cytosolContents(const Prokaryotic& pro, const MoleculeVals& cytosol_concentrations, double um3)
+{
+  MoleculeVals contents(pro);
+  contents.vals_ = cytosol_concentrations.vals_ / (1.67e-6 / um3);
+  return contents;
+}
+
 void Cell::setCytosolContentsByConcentrations(const MoleculeVals& cytosol_concentrations)
 {
-  cytosol_contents_.vals_ = cytosol_concentrations.vals_ * um3_ * 602;
+  cytosol_contents_.vals_ = cytosolContents(pro_, cytosol_concentrations, um3_).vals_;
 }
 
 void Cell::tick(const Biome& biome)
@@ -487,7 +486,10 @@ void Prokaryotic::runTests()
   cout << "Concentrations: " << endl;
   cout << concentrations.str("  ") << endl;
 
-  
+  cout << "Round trip test" << endl;
+  MoleculeVals contents2 = Cell::cytosolContents(*this, concentrations, um3);
+  cout << "Counts: " << endl;
+  cout << contents2.str("  ") << endl;
 }
 
 
