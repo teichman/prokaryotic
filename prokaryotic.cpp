@@ -44,10 +44,13 @@ public:
   Eigen::ArrayXd vals_;
   
   MoleculeVals(const Prokaryotic& pro);
+
+  int nz() const;
+  std::vector<int> nz_indices() const;
   
   std::string _str() const;
   const double& operator[](int idx) const { return vals_.coeffRef(idx); }
-  double operator[](int idx) { return vals_.coeffRef(idx); }
+  double& operator[](int idx) { return vals_.coeffRef(idx); }
   const double& operator[](const std::string& name) const;
   double& operator[](const std::string& name);
 };
@@ -103,9 +106,9 @@ public:
 
   const Prokaryotic& pro_;
   std::string name_;
-  double um3_;
+  double um3_;  // 1e-18 m3, or 1e-15 L (i.e. femtoliter)
 //  ReactionTable reaction_table_;
-  MoleculeVals cytosol_concentrations_;
+  MoleculeVals cytosol_contents_;
   MoleculeVals membrane_contents_;
   MoleculeVals membrane_permeabilities_;
   
@@ -113,6 +116,24 @@ public:
 
   std::string _str() const;
   void tick(const Biome& biome);
+  MoleculeVals cytosolConcentrations() const;  // mM
+  static MoleculeVals cytosolConcentrations(const Prokaryotic& pro, MoleculeVals cytosol_contents, double um3);  // mM
+  void setCytosolContentsByConcentrations(const MoleculeVals& cytosol_concentrations);
+};
+
+class ReactionType : public Printable
+{
+public:
+  typedef std::shared_ptr<const ReactionType> ConstPtr;
+
+  const Prokaryotic& pro_;
+  MoleculeVals inputs_;
+  MoleculeVals outputs_;
+  double p_spon_;  // probability of spontaneous reaction if inputs collide
+  
+  ReactionType(const Prokaryotic& pro, const MoleculeVals& inputs, const MoleculeVals& outputs, double p_spon);
+  void tick(const Biome& biome, Cell& cell) const;
+  std::string _str() const;
 };
 
 // Contains the whole simulation model
@@ -122,6 +143,7 @@ public:
   Prokaryotic();
   std::vector<MoleculeType::ConstPtr> molecule_types_;
   std::map<std::string, MoleculeType::ConstPtr> molecule_map_;
+  std::vector<ReactionType::ConstPtr> reaction_types_;
 
   std::vector<Biome::Ptr> biomes_;
   std::vector<Cell::Ptr> cells_;
@@ -138,8 +160,56 @@ public:
   void tick();
   std::string _str() const;
   void run();
+  void runTests();
 };
 
+
+ReactionType::ReactionType(const Prokaryotic& pro,
+                           const MoleculeVals& inputs, const MoleculeVals& outputs,
+                           double p_spon) :
+  pro_(pro),
+  inputs_(pro),
+  outputs_(pro),
+  p_spon_(p_spon)
+{
+}
+
+void ReactionType::tick(const Biome& biome, Cell& cell) const
+{
+  int num_collisions = 0;
+  
+  // compute number of collisions for this type
+  // If there is only one input, then it's easy: it's just that number.
+  if (inputs_.nz() == 1) {
+    int idx = inputs_.nz_indices()[0];
+    num_collisions = cell.cytosol_contents_[idx];
+  }
+  // otherwise do something smart
+  else {
+    num_collisions = 0;
+  }
+  
+  // apply probability of reaction occurring
+  int num_reactions = p_spon_ * num_collisions;
+  
+  // update cell.cytosol_counts_
+  cell.cytosol_contents_.vals_ -= inputs_.vals_ * num_reactions;
+  cell.cytosol_contents_.vals_ += outputs_.vals_ * num_reactions;
+}
+
+std::string ReactionType::_str() const
+{
+  std::ostringstream oss;
+  oss << "Reaction" << endl;
+  oss << "  Inputs: " << endl;
+  for (int i = 0; i < inputs_.vals_.size(); ++i)
+    if (inputs_.vals_[i] > 0)
+      oss << "    " << inputs_.vals_[i] << "x " << pro_.molecule_types_[i]->name_ << endl;
+  for (int i = 0; i < outputs_.vals_.size(); ++i)
+    if (outputs_.vals_[i] > 0)
+      oss << "    " << outputs_.vals_[i] << "x " << pro_.molecule_types_[i]->name_ << endl;  
+  return oss.str();
+}
 
 MoleculeType::MoleculeType(const std::string& name,
                            const std::string& symbol,
@@ -180,6 +250,24 @@ MoleculeVals::MoleculeVals(const Prokaryotic& pro) :
   pro_(pro)
 {
   vals_ = ArrayXd::Zero(MoleculeType::num_molecule_types_);
+}
+
+int MoleculeVals::nz() const
+{
+  int num = 0;
+  for (int idx = 0; idx < vals_.size(); ++idx)
+    if (vals_.coeffRef(idx) == 0.0)
+      num += 1;
+  return num;
+}
+
+std::vector<int> MoleculeVals::nz_indices() const
+{
+  vector<int> indices;
+  for (int idx = 0; idx < vals_.size(); ++idx)
+    if (vals_.coeffRef(idx) != 0.0)
+      indices.push_back(idx);
+  return indices;
 }
 
 std::string MoleculeVals::_str() const
@@ -225,13 +313,14 @@ void Biome::tick()
 Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   pro_(pro),
   name_(name),
-  um3_(0.6),
-  cytosol_concentrations_(pro_),
+  um3_(1.0),
+  cytosol_contents_(pro_),
   membrane_contents_(pro_),
   membrane_permeabilities_(pro_)
 {
   membrane_permeabilities_["R"] = 0.005;
   membrane_permeabilities_["Phosphate"] = 0.1;
+  membrane_permeabilities_["X"] = 0.001;
 }
 
 std::string Cell::_str() const
@@ -239,21 +328,61 @@ std::string Cell::_str() const
   std::ostringstream oss;
   oss << "Cell \"" << name_ << "\"" << endl;
   oss << "  um3_: " << um3_ << endl;
-  oss << "  cytosol_concentrations_: " << endl << cytosol_concentrations_.str("    ") << endl;
+  oss << "  cytosol_contents_: " << endl << cytosol_contents_.str("    ") << endl;
   oss << "  membrane_contents_: " << endl << membrane_contents_.str("    ") << endl;
   return oss.str();
+}
+
+MoleculeVals Cell::cytosolConcentrations(const Prokaryotic& pro, MoleculeVals cytosol_contents, double um3)
+{
+  // We want moles per L.
+  // We have counts per um3.
+  // liters/cell = (um3 / 1e15)
+  // molecules/L = count / (um3 / 1e15)
+  // moles/L = count / ((um3 / 1e15) * 6.02e23)
+  // moles/L = count / (um3 * 6.02e8)
+  // Actually we want mM, so millimoles
+  // millimoles/L = 1e6 * count / (um3 * 6.02e8)
+  // millimoles/L = count / (um3 * 6.02e2)
+
+
+  // millimoles = 1e3 * (num / 6e23)
+  // liters = um3 * 1e-15, bc um3 is fL.
+  // mM = 1e3 * (num / 6e23) / (um3 * 1e-15)
+  // mM = 1.67e-06 * num / um3
+  
+  MoleculeVals concentrations(pro);
+  concentrations.vals_ = cytosol_contents.vals_ * (1.67e-6 / um3);
+  return concentrations;
+}
+
+MoleculeVals Cell::cytosolConcentrations() const
+{
+  return cytosolConcentrations(pro_, cytosol_contents_, um3_);
+}
+
+void Cell::setCytosolContentsByConcentrations(const MoleculeVals& cytosol_concentrations)
+{
+  cytosol_contents_.vals_ = cytosol_concentrations.vals_ * um3_ * 602;
 }
 
 void Cell::tick(const Biome& biome)
 {
   // Passive membrane permeations
-  auto deltas = (biome.concentrations_.vals_ - cytosol_concentrations_.vals_);
+  MoleculeVals cytosol_concentrations = cytosolConcentrations();
+  auto deltas = (biome.concentrations_.vals_ - cytosol_concentrations.vals_);
   auto step = membrane_permeabilities_.vals_ * deltas;
-  cytosol_concentrations_.vals_ += step;
+  cytosol_concentrations.vals_ += step;
+  setCytosolContentsByConcentrations(cytosol_concentrations);
   
   // In-cell reactions
-  cytosol_concentrations_["R"] = std::max(0.0, cytosol_concentrations_["R"] - 0.1);
-  cytosol_concentrations_["Phosphate"] -= 0.5;
+  // cytosol_concentrations_["R"] = std::max(0.0, cytosol_concentrations_["R"] - 0.1);
+  // cytosol_concentrations_["Phosphate"] -= 0.5;
+  // cytosol_concentrations_["X"] += 0.1;
+
+  for (auto reaction : pro_.reaction_types_) {
+    reaction->tick(biome, *this);
+  }
 }
 
 Prokaryotic::Prokaryotic()
@@ -261,12 +390,29 @@ Prokaryotic::Prokaryotic()
   // addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP", ":bang:", 503.15)));
   addMoleculeType(MoleculeType::Ptr(new MoleculeType("ADP", ":briefcase:", 423.17)));
   addMoleculeType(MoleculeType::Ptr(new MoleculeType("Phosphate", "P", 94.97)));
-  addMoleculeType(MoleculeType::Ptr(new MoleculeType("R", "R", 1000)));
-  std::vector<MoleculeType::ConstPtr> constituents;
-  constituents.push_back(molecule("ADP"));
-  constituents.push_back(molecule("Phosphate"));
-  addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP", ":bang:", constituents)));
+  addMoleculeType(MoleculeType::Ptr(new MoleculeType("X", "X", 500)));
+  {
+    std::vector<MoleculeType::ConstPtr> constituents;
+    constituents.push_back(molecule("X"));
+    constituents.push_back(molecule("X"));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType("R", "R", constituents)));
+  }
+  
+  {
+    std::vector<MoleculeType::ConstPtr> constituents;
+    constituents.push_back(molecule("ADP"));
+    constituents.push_back(molecule("Phosphate"));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP", ":bang:", constituents)));
+  }
 
+  {
+    MoleculeVals inputs(*this);
+    inputs["R"] = 1;
+    MoleculeVals outputs(*this);
+    outputs["X"] = 2;
+    reaction_types_.push_back(ReactionType::ConstPtr(new ReactionType(*this, inputs, outputs, 0.01)));
+  }
+    
   for (auto mt : molecule_types_)
     cout << mt->str() << endl;
 
@@ -275,8 +421,9 @@ Prokaryotic::Prokaryotic()
   biomes_.push_back(Biome::Ptr(new Biome(*this, 10, "Alkaline vents")));
   biomes_[0]->concentrations_["Phosphate"] = 24;
   biomes_[0]->concentrations_["R"] = 10;
-
-  cells_[0]->cytosol_concentrations_.vals_ = biomes_[0]->concentrations_.vals_;
+  biomes_[0]->concentrations_["X"] = 0;
+  
+  cells_[0]->setCytosolContentsByConcentrations(biomes_[0]->concentrations_);
 
   cout << str() << endl;
 }
@@ -285,10 +432,15 @@ std::string Prokaryotic::_str() const
 {
   std::ostringstream oss;
   oss << "Simulation status" << endl;
+  oss << "  Reactions" << endl;  
+  for (auto rt : reaction_types_)
+    oss << rt->str("    ") << endl;
+  oss << "  Cells" << endl;  
   for (auto cell : cells_)
-    oss << cell->str("  ") << endl;
+    oss << cell->str("    ") << endl;
+  oss << "  Biomes" << endl;
   for (auto biome : biomes_)
-    oss << biomes_[0]->str("  ") << endl;
+    oss << biomes_[0]->str("    ") << endl;
   return oss.str();
 }
 
@@ -320,9 +472,29 @@ void Prokaryotic::tick()
     cell->tick(*biomes_[0]);
 }
 
+void Prokaryotic::runTests()
+{
+  // http://book.bionumbers.org/what-are-the-concentrations-of-free-metabolites-in-cells/
+  // "rule of thumb that a concentration of 1 nM corresponds to roughly one copy of the molecule of interest per E. coli cell.
+  // Hence, 100 mM means that there are roughly 10^8 copies of glutamate in each bacterium."
+  MoleculeVals cytosol_contents(*this);
+  cytosol_contents[0] = 1e8;
+  cytosol_contents[1] = 1;
+  double um3 = 1.0;
+  MoleculeVals concentrations = Cell::cytosolConcentrations(*this, cytosol_contents, um3);
+  cout << "Counts: " << endl;
+  cout << cytosol_contents.str("  ") << endl;
+  cout << "Concentrations: " << endl;
+  cout << concentrations.str("  ") << endl;
+
+  
+}
+
+
 int main(int argc, char** argv)
 {
   Prokaryotic prokaryotic;
-  prokaryotic.run();
+  prokaryotic.runTests();
+  //prokaryotic.run();
   return 0;
 }
