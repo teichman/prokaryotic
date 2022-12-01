@@ -1,3 +1,5 @@
+#include <chrono>
+#include <thread>
 #include <limits>
 #include <Eigen/Dense>
 #include <cassert>
@@ -50,6 +52,8 @@ public:
 
   int nz() const;
   std::vector<int> nz_indices() const;
+  void round() { vals_ = vals_.round(); }
+  void probabilisticRound();
   
   std::string _str() const;
   const double& operator[](int idx) const { return vals_.coeffRef(idx); }
@@ -210,6 +214,10 @@ ReactionType::ReactionType(const Prokaryotic& pro,
   kms_(kms),
   kcat_(kcat)
 {
+  for (int i = 0; i < inputs_.vals_.size(); ++i) {
+    if (inputs_.vals_[i] > 0)
+      assert(kms_.vals_[i] > 0);
+  }
 }
 
 void ReactionType::tick(const Biome& biome, Cell& cell, int num_protein_copies) const
@@ -228,6 +236,9 @@ void ReactionType::tick(const Biome& biome, Cell& cell, int num_protein_copies) 
   // update cell.cytosol_counts_
   cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
   cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
+
+  // Should only need one of these at the end of Cell::tick()
+  //cell.cytosol_contents_.probabilisticRound();
 }
 
 std::string ReactionType::_str() const
@@ -347,6 +358,17 @@ double& MoleculeVals::operator[](const std::string& name)
   return vals_.coeffRef(pro_.moleculeIdx(name));
 }
 
+void MoleculeVals::probabilisticRound()
+{
+  for (int i = 0; i < vals_.size(); ++i) {
+    double thresh = (ArrayXd::Random(1)[0] + 1.0) / 2.0;  // slow but convenient.  ArrayXd::Random generates random doubles in [-1, 1].
+    if (vals_[i] - int(vals_[i]) > thresh)
+      vals_[i] = std::ceil(vals_[i]);
+    else
+      vals_[i] = std::floor(vals_[i]);
+  }
+}
+
 
 Biome::Biome(const Prokaryotic& pro, double m3, const std::string& name) :
   pro_(pro),
@@ -378,7 +400,7 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   membrane_contents_(pro_),
   membrane_permeabilities_(pro_)
 {
-  membrane_permeabilities_["R"] = 0.005;
+  membrane_permeabilities_["R"] = 0.0000005;
   membrane_permeabilities_["Phosphate"] = 0.1;
   membrane_permeabilities_["X"] = 0.001;
 }
@@ -439,11 +461,11 @@ void Cell::tick(const Biome& biome)
   }
 
   // Apply degredation of molecules.
-  for (auto mt : pro_.moleculeTypes()) {
-    if (mt->pDenature() > 0) {
+  for (auto mt : pro_.moleculeTypes())
+    if (mt->pDenature() > 0)
       cytosol_contents_[mt->idx_] *= (1.0 - mt->pDenature());
-    }
-  }
+      
+  cytosol_contents_.probabilisticRound();
 }
 
 Prokaryotic::Prokaryotic()
@@ -479,6 +501,17 @@ void Prokaryotic::initializeHardcoded()
     addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP Synthase", ":hammer:", constituents, 1.0)));
   }
 
+  { 
+    std::vector<MoleculeType::ConstPtr> constituents;
+    constituents.push_back(molecule("X"));
+    constituents.push_back(molecule("X"));
+    constituents.push_back(molecule("R"));
+    constituents.push_back(molecule("R"));
+    constituents.push_back(molecule("Phosphate"));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP Consumer", ":gear:", constituents)));
+  }
+
+  
   // Now add Reactions to MoleculeTypes.
   {
     MoleculeVals inputs(*this);
@@ -492,6 +525,21 @@ void Prokaryotic::initializeHardcoded()
     double kcat = 0.001;
     _molecule("ATP Synthase")->reaction_ = ReactionType::ConstPtr(new ReactionType(*this, inputs, outputs, kms, kcat));
   }
+
+  {
+    MoleculeVals inputs(*this);
+    inputs["X"] = 2;
+    inputs["ATP"] = 1;
+    MoleculeVals outputs(*this);
+    outputs["R"] = 1;
+    outputs["ADP"] = 1;
+    outputs["Phosphate"] = 1;
+    MoleculeVals kms(*this);
+    kms["X"] = 1e-1;
+    kms["ATP"] = 1e-3;
+    double kcat = 0.01;
+    _molecule("ATP Consumer")->reaction_ = ReactionType::ConstPtr(new ReactionType(*this, inputs, outputs, kms, kcat));
+  }
   
   for (auto mt : molecule_types_)
     cout << mt->str() << endl;
@@ -500,12 +548,13 @@ void Prokaryotic::initializeHardcoded()
   
   biomes_.push_back(Biome::Ptr(new Biome(*this, 10, "Alkaline vents")));
   biomes_[0]->concentrations_["Phosphate"] = 0.01;
-  biomes_[0]->concentrations_["R"] = 10;
-  biomes_[0]->concentrations_["X"] = 0;
+  biomes_[0]->concentrations_["R"] = 0;
+  biomes_[0]->concentrations_["X"] = 10;
   
   cells_[0]->setCytosolContentsByConcentrations(biomes_[0]->concentrations_);
   cells_[0]->cytosol_contents_["ADP"] = 1e6;
-  cells_[0]->cytosol_contents_["ATP Synthase"] = 1e6;
+  cells_[0]->cytosol_contents_["ATP Synthase"] = 1e4;
+  cells_[0]->cytosol_contents_["ATP Consumer"] = 1e3;
 
   cout << str() << endl;
 }
@@ -533,8 +582,10 @@ void Prokaryotic::run()
   {
     tick();
     cout << str() << endl;
-    cout << "Press RET to continue." << endl;
-    std::cin.get();
+    // cout << "Press RET to continue." << endl;
+    // std::cin.get();
+    
+    //std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }
 
