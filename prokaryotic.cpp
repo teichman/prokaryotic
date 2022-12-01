@@ -173,7 +173,7 @@ public:
   std::string _str() const;
   void run();
   void runTests();
-  void initializeHardcodedGame();
+  void initializeHardcoded();
 
 private:
   std::vector<MoleculeType::Ptr> molecule_types_;
@@ -220,13 +220,15 @@ std::string ReactionType::_str() const
 {
   std::ostringstream oss;
   oss << "Reaction" << endl;
-  oss << "  Inputs: " << endl;
+  oss << "  Inputs & kms: " << endl;
   for (int i = 0; i < inputs_.vals_.size(); ++i)
     if (inputs_.vals_[i] > 0)
-      oss << "    " << inputs_.vals_[i] << "x " << pro_.moleculeName(i) << endl;
+      oss << "    " << inputs_.vals_[i] << "x " << pro_.moleculeName(i) << " (km: " << kms_[i] << " mM)" << endl;
+  oss << "  Outputs: " << endl;
   for (int i = 0; i < outputs_.vals_.size(); ++i)
     if (outputs_.vals_[i] > 0)
-      oss << "    " << outputs_.vals_[i] << "x " << pro_.moleculeName(i) << endl;  
+      oss << "    " << outputs_.vals_[i] << "x " << pro_.moleculeName(i) << endl;
+  oss << "  kcat_: " << kcat_ << endl;  
   return oss.str();
 }
 
@@ -427,7 +429,7 @@ void Cell::tick(const Biome& biome)
 Prokaryotic::Prokaryotic()
 {}
 
-void Prokaryotic::initializeHardcodedGame()
+void Prokaryotic::initializeHardcoded()
 {
   // Create all MoleculeTypes first so we avoid the complexity in updating all the MoleculeVals when we add new MoleculeTypes.
   addMoleculeType(MoleculeType::Ptr(new MoleculeType("ADP", ":briefcase:", 423.17)));
@@ -477,11 +479,13 @@ void Prokaryotic::initializeHardcodedGame()
   cells_.push_back(Cell::Ptr(new Cell(*this, "aoeu")));
   
   biomes_.push_back(Biome::Ptr(new Biome(*this, 10, "Alkaline vents")));
-  biomes_[0]->concentrations_["Phosphate"] = 24;
+  biomes_[0]->concentrations_["Phosphate"] = 0.01;
   biomes_[0]->concentrations_["R"] = 10;
   biomes_[0]->concentrations_["X"] = 0;
   
   cells_[0]->setCytosolContentsByConcentrations(biomes_[0]->concentrations_);
+  cells_[0]->cytosol_contents_["ADP"] = 1e6;
+  cells_[0]->cytosol_contents_["ATP Synthase"] = 1e6;
 
   cout << str() << endl;
 }
@@ -561,8 +565,8 @@ void Prokaryotic::runTests()
 int main(int argc, char** argv)
 {
   Prokaryotic prokaryotic;
-  prokaryotic.initializeHardcodedGame();
+  prokaryotic.initializeHardcoded();
   //prokaryotic.runTests();
-  //prokaryotic.run();
+  prokaryotic.run();
   return 0;
 }
