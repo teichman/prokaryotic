@@ -79,6 +79,15 @@ public:
   static double rate(double substrate_concentration, double km, double kcat);
 };
 
+double probabilityPerSecond(double half_life_hours)
+{
+  if (half_life_hours == std::numeric_limits<double>::max())
+    return 0.0;
+
+  double half_life_ticks = half_life_hours * 3600;
+  return 1.0 - exp(log(0.5) / half_life_ticks);
+}
+
 // Superclass for proteins and small molecules, both of which we will just call "Molecules".
 class MoleculeType : public Printable
 {
@@ -90,16 +99,21 @@ public:
   std::string name_;
   std::string symbol_;
   double daltons_;
+  double half_life_hours_;
   std::vector<MoleculeType::ConstPtr> constituents_;
   ReactionType::ConstPtr reaction_;  // If a protein, this is the reaction it catalyzes 
 
   MoleculeType(const std::string& name, const std::string& symbol, double daltons,
+               double half_life_hours = std::numeric_limits<double>::max(),
                ReactionType::ConstPtr reaction = ReactionType::ConstPtr(nullptr));
-  MoleculeType(const std::string& name, const std::string& symbol, const std::vector<MoleculeType::ConstPtr>& constituents,
+  MoleculeType(const std::string& name, const std::string& symbol,
+               const std::vector<MoleculeType::ConstPtr>& constituents,
+               double half_life_hours = std::numeric_limits<double>::max(),
                ReactionType::ConstPtr reaction = ReactionType::ConstPtr(nullptr));
   
   std::string _str() const;
   static size_t numMoleculeTypes() { return num_molecule_types_; }
+  double pDenature() const { return probabilityPerSecond(half_life_hours_); }
   
 private:
   static size_t num_molecule_types_;
@@ -241,11 +255,13 @@ double ReactionType::rate(double substrate_concentration, double km, double kcat
 MoleculeType::MoleculeType(const std::string& name,
                            const std::string& symbol,
                            double daltons,
+                           double half_life_hours,
                            ReactionType::ConstPtr reaction) :
   idx_(num_molecule_types_),
   name_(name),
   symbol_(symbol),
   daltons_(daltons),
+  half_life_hours_(half_life_hours),
   reaction_(reaction)
 {
   num_molecule_types_ += 1;
@@ -253,11 +269,13 @@ MoleculeType::MoleculeType(const std::string& name,
 
 MoleculeType::MoleculeType(const std::string& name, const std::string& symbol,
                            const std::vector<MoleculeType::ConstPtr>& constituents,
+                           double half_life_hours,
                            ReactionType::ConstPtr reaction) :
   idx_(num_molecule_types_),
   name_(name),
   symbol_(symbol),
   daltons_(0),
+  half_life_hours_(half_life_hours),
   constituents_(constituents),
   reaction_(reaction)
 {
@@ -290,7 +308,7 @@ std::string MoleculeType::_str() const
 MoleculeVals::MoleculeVals(const Prokaryotic& pro) :
   pro_(pro)
 {
-  vals_ = ArrayXd::Zero(MoleculeType::num_molecule_types_);
+  vals_ = ArrayXd::Zero(pro.moleculeTypes().size());
 }
 
 int MoleculeVals::nz() const
@@ -419,11 +437,13 @@ void Cell::tick(const Biome& biome)
       mt->reaction_->tick(biome, *this, cytosol_contents_[mt->idx_]);
     }
   }
-  
-  // cytosol_concentrations_["R"] = std::max(0.0, cytosol_concentrations_["R"] - 0.1);
-  // cytosol_concentrations_["Phosphate"] -= 0.5;
-  // cytosol_concentrations_["X"] += 0.1;
 
+  // Apply degredation of molecules.
+  for (auto mt : pro_.moleculeTypes()) {
+    if (mt->pDenature() > 0) {
+      cytosol_contents_[mt->idx_] *= (1.0 - mt->pDenature());
+    }
+  }
 }
 
 Prokaryotic::Prokaryotic()
@@ -456,7 +476,7 @@ void Prokaryotic::initializeHardcoded()
     constituents.push_back(molecule("R"));
     constituents.push_back(molecule("R"));
     constituents.push_back(molecule("Phosphate"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP Synthase", ":hammer:", constituents)));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP Synthase", ":hammer:", constituents, 1.0)));
   }
 
   // Now add Reactions to MoleculeTypes.
@@ -559,6 +579,20 @@ void Prokaryotic::runTests()
   MoleculeVals contents2 = Cell::cytosolContents(*this, concentrations, um3);
   cout << "Counts: " << endl;
   cout << contents2.str("  ") << endl;
+
+  //double half_life_hours = std::numeric_limits<double>::max();
+  double half_life_hours = 1.0;
+  double p_denature = probabilityPerSecond(half_life_hours);
+  cout << "half_life_hours: " << half_life_hours << endl;
+  cout << "p_denature per tick: " << p_denature << endl;
+
+  double population = 1.0;
+  int num_ticks = 0;
+  for (int i = 0; i < int(half_life_hours * 60 * 60); ++i) {
+    population *= (1.0 - p_denature);
+    num_ticks += 1;
+  }
+  cout << "After " << num_ticks << " ticks, population is now " << population << endl;
 }
 
 
