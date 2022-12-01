@@ -1,3 +1,4 @@
+#include <limits>
 #include <Eigen/Dense>
 #include <cassert>
 #include <sstream>
@@ -13,6 +14,8 @@ using std::vector;
 using Eigen::ArrayXd;
 
 class Prokaryotic;
+class Cell;
+class Biome;
 
 // Just gives the prefix option for free.
 class Printable
@@ -55,6 +58,27 @@ public:
   double& operator[](const std::string& name);
 };
 
+class ReactionType : public Printable
+{
+public:
+  typedef std::shared_ptr<const ReactionType> ConstPtr;
+
+  const Prokaryotic& pro_;
+  MoleculeVals inputs_;
+  MoleculeVals outputs_;
+  MoleculeVals kms_;  // concentrations that yield half the max rate.  Each element is mM.
+  double kcat_;  // max rate per tick (1 tick is 1 second?)
+  
+  ReactionType(const Prokaryotic& pro,
+               const MoleculeVals& inputs, const MoleculeVals& outputs,
+               const MoleculeVals& kms, double kcat);
+  void tick(const Biome& biome, Cell& cell, int num_protein_copies) const;
+  std::string _str() const;
+  // See Fig 1 of http://book.bionumbers.org/how-many-reactions-do-enzymes-carry-out-each-second/
+  // substrate_concentration in mM, km in mM, kcat in reactions / sec
+  static double rate(double substrate_concentration, double km, double kcat);
+};
+
 // Superclass for proteins and small molecules, both of which we will just call "Molecules".
 class MoleculeType : public Printable
 {
@@ -67,9 +91,13 @@ public:
   std::string symbol_;
   double daltons_;
   std::vector<MoleculeType::ConstPtr> constituents_;
+  ReactionType::ConstPtr reaction_;  // If a protein, this is the reaction it catalyzes 
 
-  MoleculeType(const std::string& name, const std::string& symbol, double daltons);
-  MoleculeType(const std::string& name, const std::string& symbol, const std::vector<MoleculeType::ConstPtr>& constituents);
+  MoleculeType(const std::string& name, const std::string& symbol, double daltons,
+               ReactionType::ConstPtr reaction = ReactionType::ConstPtr(nullptr));
+  MoleculeType(const std::string& name, const std::string& symbol, const std::vector<MoleculeType::ConstPtr>& constituents,
+               ReactionType::ConstPtr reaction = ReactionType::ConstPtr(nullptr));
+  
   std::string _str() const;
   static size_t numMoleculeTypes() { return num_molecule_types_; }
   
@@ -107,7 +135,6 @@ public:
   const Prokaryotic& pro_;
   std::string name_;
   double um3_;  // 1e-18 m3, or 1e-15 L (i.e. femtoliter)
-//  ReactionTable reaction_table_;
   MoleculeVals cytosol_contents_;
   MoleculeVals membrane_contents_;
   MoleculeVals membrane_permeabilities_;
@@ -124,34 +151,14 @@ public:
   static MoleculeVals cytosolContents(const Prokaryotic& pro, const MoleculeVals& cytosol_concentrations, double um3);
 };
 
-class ReactionType : public Printable
-{
-public:
-  typedef std::shared_ptr<const ReactionType> ConstPtr;
-
-  const Prokaryotic& pro_;
-  MoleculeVals inputs_;
-  MoleculeVals outputs_;
-  double p_spon_;  // probability of spontaneous reaction if inputs collide
-  
-  ReactionType(const Prokaryotic& pro, const MoleculeVals& inputs, const MoleculeVals& outputs, double p_spon);
-  void tick(const Biome& biome, Cell& cell) const;
-  std::string _str() const;
-};
-
 // Contains the whole simulation model
+// Data protection strategy: Data is stored as (non-const) Ptr, but is only handed out as ConstPtr.
 class Prokaryotic : public Printable
 {
 public:
   Prokaryotic();
-  std::vector<MoleculeType::ConstPtr> molecule_types_;
-  std::map<std::string, MoleculeType::ConstPtr> molecule_map_;
-  std::vector<ReactionType::ConstPtr> reaction_types_;
-
-  std::vector<Biome::Ptr> biomes_;
-  std::vector<Cell::Ptr> cells_;
   
-  void addMoleculeType(MoleculeType::ConstPtr mt);
+  void addMoleculeType(MoleculeType::Ptr mt);
   
   MoleculeType::ConstPtr molecule(const std::string& name) const {
     assert(molecule_map_.find(name) != molecule_map_.end());
@@ -160,44 +167,53 @@ public:
   
   size_t moleculeIdx(const std::string& name) const { return molecule(name)->idx_; }
   const std::string& moleculeName(size_t idx) const { return molecule_types_[idx]->name_; }
+  std::vector<MoleculeType::ConstPtr> moleculeTypes() const;
+  
   void tick();
   std::string _str() const;
   void run();
   void runTests();
-};
+  void initializeHardcodedGame();
 
+private:
+  std::vector<MoleculeType::Ptr> molecule_types_;
+  std::map<std::string, MoleculeType::Ptr> molecule_map_;
+  std::vector<Biome::Ptr> biomes_;
+  std::vector<Cell::Ptr> cells_;
+
+  MoleculeType::Ptr _molecule(const std::string& name) const {
+    assert(molecule_map_.find(name) != molecule_map_.end());
+    return molecule_map_.at(name);
+  }
+};
 
 ReactionType::ReactionType(const Prokaryotic& pro,
                            const MoleculeVals& inputs, const MoleculeVals& outputs,
-                           double p_spon) :
+                           const MoleculeVals& kms, double kcat) :
   pro_(pro),
-  inputs_(pro),
-  outputs_(pro),
-  p_spon_(p_spon)
+  inputs_(inputs),
+  outputs_(outputs),
+  kms_(kms),
+  kcat_(kcat)
 {
 }
 
-void ReactionType::tick(const Biome& biome, Cell& cell) const
+void ReactionType::tick(const Biome& biome, Cell& cell, int num_protein_copies) const
 {
-  int num_collisions = 0;
-  
-  // compute number of collisions for this type
-  // If there is only one input, then it's easy: it's just that number.
-  if (inputs_.nz() == 1) {
-    int idx = inputs_.nz_indices()[0];
-    num_collisions = cell.cytosol_contents_[idx];
-  }
-  // otherwise do something smart
-  else {
-    num_collisions = 0;
-  }
-  
-  // apply probability of reaction occurring
-  int num_reactions = p_spon_ * num_collisions;
+  // Simplify: Assume that everything follows Michaelis-Menten kinetics, even for the (presumably majority) of reactions
+  // that have multiple substrates.
+  // We'll just take the min reaction rate across the substrates (inputs).
+  // https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics
+  MoleculeVals concentrations = cell.cytosolConcentrations();
+  double minrate = std::numeric_limits<double>::max();
+  for (int i = 0; i < inputs_.vals_.size(); ++i)
+    if (inputs_[i] > 0)
+      minrate = std::min(minrate, rate(concentrations[i], kms_[i], kcat_));
+  double rate = minrate;  // reactions / tick (1 tick == 1 second?)
   
   // update cell.cytosol_counts_
-  cell.cytosol_contents_.vals_ -= inputs_.vals_ * num_reactions;
-  cell.cytosol_contents_.vals_ += outputs_.vals_ * num_reactions;
+  cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
+  cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
 }
 
 std::string ReactionType::_str() const
@@ -207,31 +223,41 @@ std::string ReactionType::_str() const
   oss << "  Inputs: " << endl;
   for (int i = 0; i < inputs_.vals_.size(); ++i)
     if (inputs_.vals_[i] > 0)
-      oss << "    " << inputs_.vals_[i] << "x " << pro_.molecule_types_[i]->name_ << endl;
+      oss << "    " << inputs_.vals_[i] << "x " << pro_.moleculeName(i) << endl;
   for (int i = 0; i < outputs_.vals_.size(); ++i)
     if (outputs_.vals_[i] > 0)
-      oss << "    " << outputs_.vals_[i] << "x " << pro_.molecule_types_[i]->name_ << endl;  
+      oss << "    " << outputs_.vals_[i] << "x " << pro_.moleculeName(i) << endl;  
   return oss.str();
+}
+
+double ReactionType::rate(double substrate_concentration, double km, double kcat)
+{
+  // https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics
+  return kcat * substrate_concentration / (km + substrate_concentration);
 }
 
 MoleculeType::MoleculeType(const std::string& name,
                            const std::string& symbol,
-                           double daltons) :
+                           double daltons,
+                           ReactionType::ConstPtr reaction) :
   idx_(num_molecule_types_),
   name_(name),
   symbol_(symbol),
-  daltons_(daltons)
+  daltons_(daltons),
+  reaction_(reaction)
 {
   num_molecule_types_ += 1;
 }
 
 MoleculeType::MoleculeType(const std::string& name, const std::string& symbol,
-                           const std::vector<MoleculeType::ConstPtr>& constituents) :
+                           const std::vector<MoleculeType::ConstPtr>& constituents,
+                           ReactionType::ConstPtr reaction) :
   idx_(num_molecule_types_),
   name_(name),
   symbol_(symbol),
   daltons_(0),
-  constituents_(constituents)
+  constituents_(constituents),
+  reaction_(reaction)
 {
   num_molecule_types_ += 1;
   daltons_ = 0;
@@ -246,6 +272,16 @@ std::string MoleculeType::_str() const
   oss << "  idx_: " << idx_ << endl;
   oss << "  symbol_: " << symbol_ << endl;
   oss << "  daltons_: " << daltons_ << endl;
+  oss << "  Constituents: " << endl;
+  for (auto mt : constituents_)
+    oss << "    " << mt->name_ << endl;
+  if (!reaction_)
+    oss << "  Reaction: None" << endl;
+  else {
+    oss << "  Reaction" << endl;
+    oss << reaction_->str("    ") << endl;
+  }
+  
   return oss.str();
 }
 
@@ -314,6 +350,7 @@ void Biome::tick()
 }
 
 Cell::Cell(const Prokaryotic& pro, const std::string& name) :
+           
   pro_(pro),
   name_(name),
   um3_(1.0),
@@ -374,19 +411,25 @@ void Cell::tick(const Biome& biome)
   cytosol_concentrations.vals_ += step;
   setCytosolContentsByConcentrations(cytosol_concentrations);
   
-  // In-cell reactions
+  // In-cell reactions.  For now we are assuming all reactions require a protein.
+  for (auto mt : pro_.moleculeTypes()) {
+    if (mt->reaction_) {
+      mt->reaction_->tick(biome, *this, cytosol_contents_[mt->idx_]);
+    }
+  }
+  
   // cytosol_concentrations_["R"] = std::max(0.0, cytosol_concentrations_["R"] - 0.1);
   // cytosol_concentrations_["Phosphate"] -= 0.5;
   // cytosol_concentrations_["X"] += 0.1;
 
-  for (auto reaction : pro_.reaction_types_) {
-    reaction->tick(biome, *this);
-  }
 }
 
 Prokaryotic::Prokaryotic()
+{}
+
+void Prokaryotic::initializeHardcodedGame()
 {
-  // addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP", ":bang:", 503.15)));
+  // Create all MoleculeTypes first so we avoid the complexity in updating all the MoleculeVals when we add new MoleculeTypes.
   addMoleculeType(MoleculeType::Ptr(new MoleculeType("ADP", ":briefcase:", 423.17)));
   addMoleculeType(MoleculeType::Ptr(new MoleculeType("Phosphate", "P", 94.97)));
   addMoleculeType(MoleculeType::Ptr(new MoleculeType("X", "X", 500)));
@@ -404,14 +447,30 @@ Prokaryotic::Prokaryotic()
     addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP", ":bang:", constituents)));
   }
 
+  { 
+    std::vector<MoleculeType::ConstPtr> constituents;
+    constituents.push_back(molecule("X"));
+    constituents.push_back(molecule("X"));
+    constituents.push_back(molecule("R"));
+    constituents.push_back(molecule("R"));
+    constituents.push_back(molecule("Phosphate"));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP Synthase", ":hammer:", constituents)));
+  }
+
+  // Now add Reactions to MoleculeTypes.
   {
     MoleculeVals inputs(*this);
-    inputs["R"] = 1;
+    inputs["ADP"] = 1;
+    inputs["Phosphate"] = 1;
     MoleculeVals outputs(*this);
-    outputs["X"] = 2;
-    reaction_types_.push_back(ReactionType::ConstPtr(new ReactionType(*this, inputs, outputs, 0.01)));
+    outputs["ATP"] = 1;
+    MoleculeVals kms(*this);
+    kms["ADP"] = 1e-1;
+    kms["Phosphate"] = 1e-2;
+    double kcat = 0.001;
+    _molecule("ATP Synthase")->reaction_ = ReactionType::ConstPtr(new ReactionType(*this, inputs, outputs, kms, kcat));
   }
-    
+  
   for (auto mt : molecule_types_)
     cout << mt->str() << endl;
 
@@ -431,9 +490,9 @@ std::string Prokaryotic::_str() const
 {
   std::ostringstream oss;
   oss << "Simulation status" << endl;
-  oss << "  Reactions" << endl;  
-  for (auto rt : reaction_types_)
-    oss << rt->str("    ") << endl;
+  // oss << "  Reactions" << endl;  
+  // for (auto rt : reaction_types_)
+  //   oss << rt->str("    ") << endl;
   oss << "  Cells" << endl;  
   for (auto cell : cells_)
     oss << cell->str("    ") << endl;
@@ -455,10 +514,16 @@ void Prokaryotic::run()
   }
 }
 
-void Prokaryotic::addMoleculeType(MoleculeType::ConstPtr mt)
+void Prokaryotic::addMoleculeType(MoleculeType::Ptr mt)
 {
   molecule_types_.push_back(mt);
   molecule_map_[mt->name_] = mt;
+}
+
+
+std::vector<MoleculeType::ConstPtr> Prokaryotic::moleculeTypes() const
+{
+  return std::vector<MoleculeType::ConstPtr>(molecule_types_.begin(), molecule_types_.end());
 }
 
 void Prokaryotic::tick()
@@ -496,7 +561,8 @@ void Prokaryotic::runTests()
 int main(int argc, char** argv)
 {
   Prokaryotic prokaryotic;
-  prokaryotic.runTests();
+  prokaryotic.initializeHardcodedGame();
+  //prokaryotic.runTests();
   //prokaryotic.run();
   return 0;
 }
