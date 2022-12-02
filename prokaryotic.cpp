@@ -42,6 +42,21 @@ public:
   }
 };
 
+// Contains the high level scripts for the cell.
+// e.g. high level functions like divide() are here.
+// This is where cell division happens based on some conditions, and protein synthesis regulation.
+// We're going to gloss over transcriptional vs translational regulation for now and just combine them into one big thing.
+class DNA : public Printable
+{
+public:
+  typedef std::shared_ptr<const DNA> ConstPtr;
+  typedef std::shared_ptr<DNA> Ptr;
+  
+  DNA() {}
+  void tick(Cell& cell) const;
+  std::string _str() const { return ""; }
+};
+
 class MoleculeVals : public Printable
 {
 public:
@@ -156,6 +171,7 @@ public:
   MoleculeVals cytosol_contents_;
   MoleculeVals membrane_contents_;
   MoleculeVals membrane_permeabilities_;
+  DNA::Ptr dna_;  // non-const so Prokaryotic can make changes to it.
   
   Cell(const Prokaryotic& pro, const std::string& name);
 
@@ -398,7 +414,8 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   um3_(1.0),
   cytosol_contents_(pro_),
   membrane_contents_(pro_),
-  membrane_permeabilities_(pro_)
+  membrane_permeabilities_(pro_),
+  dna_(new DNA)
 {
   membrane_permeabilities_["R"] = 0.0000005;
   membrane_permeabilities_["Phosphate"] = 0.1;
@@ -461,11 +478,31 @@ void Cell::tick(const Biome& biome)
   }
 
   // Apply degredation of molecules.
+  // TODO: Have a member of MoleculeType (or, better, ProteinType) that indicates if the protein is denatured or not.
+  // Then add proteasomes that identify denatured proteins (through ubiquitin, though maybe we don't want that ... or maybe we do??)
+  // Yeah just do proteasomes for now.
   for (auto mt : pro_.moleculeTypes())
     if (mt->pDenature() > 0)
       cytosol_contents_[mt->idx_] *= (1.0 - mt->pDenature());
-      
+
+  // Apply "DNA programming"
+  dna_->tick(*this);
+  
   cytosol_contents_.probabilisticRound();
+}
+
+void DNA::tick(Cell& cell) const
+{
+  // Eventually this code will be programmable by the player.  For now we're just hardcoding it.
+
+  // Probably better would be something that adjusts the rate of ribosomal construction of ATP Synthase based on the
+  // concentration of ATP Synthase.
+  if (cell.cytosol_contents_["ATP Synthase"] < 200) {
+    // Run the reaction that generates ATP Synthase.
+    // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
+    // Approx 5 ATP for each amino acid in the sequence.
+    // 200 amino acids per minute made by ribosomes.
+  }
 }
 
 Prokaryotic::Prokaryotic()
@@ -510,6 +547,15 @@ void Prokaryotic::initializeHardcoded()
     constituents.push_back(molecule("Phosphate"));
     addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP Consumer", ":gear:", constituents)));
   }
+  // { 
+  //   std::vector<MoleculeType::ConstPtr> constituents;
+  //   constituents.push_back(molecule("X"));
+  //   constituents.push_back(molecule("X"));
+  //   constituents.push_back(molecule("R"));
+  //   constituents.push_back(molecule("R"));
+  //   constituents.push_back(molecule("Phosphate"));
+  //   addMoleculeType(MoleculeType::Ptr(new MoleculeType("Ribosome", ":factory:", constituents)));
+  // }
 
   
   // Now add Reactions to MoleculeTypes.
@@ -577,14 +623,20 @@ std::string Prokaryotic::_str() const
 
 void Prokaryotic::run()
 {
+  typedef std::chrono::high_resolution_clock HRC;
+  
   cout << "Running." << endl;
   while(true)
   {
+    auto start = HRC::now();
     tick();
+    double seconds = double(std::chrono::duration_cast<std::chrono::nanoseconds>(HRC::now() - start).count()) * 1e-9;
     cout << str() << endl;
+    cout << "seconds / tick: " << seconds << endl;
+    cout << "ticks / second: " << 1.0 / seconds << endl;
+    
     // cout << "Press RET to continue." << endl;
     // std::cin.get();
-    
     //std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }
