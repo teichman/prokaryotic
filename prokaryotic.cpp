@@ -51,8 +51,16 @@ class DNA : public Printable
 public:
   typedef std::shared_ptr<const DNA> ConstPtr;
   typedef std::shared_ptr<DNA> Ptr;
+
+  const Prokaryotic& pro_;
+  // transcription_factors_ adjust the distribution of ribosomes to genes.
+  // User can set write simple scripts to change the transcription_factors_ in response to various things
+  // If the sum is zero, no ribosomes will do anything.
+  // If the sum is greater than 1, the distribution will be normalized.
+  MoleculeVals transcription_factors_;
+  std::vector<ReactionType::ConstPtr> synthesis_reactions_;
   
-  DNA() {}
+  DNA(const Prokaryotic& pro) : pro_(pro) {}
   void tick(Cell& cell) const;
   std::string _str() const { return ""; }
 };
@@ -91,7 +99,7 @@ public:
   ReactionType(const Prokaryotic& pro,
                const MoleculeVals& inputs, const MoleculeVals& outputs,
                const MoleculeVals& kms, double kcat);
-  void tick(const Biome& biome, Cell& cell, int num_protein_copies) const;
+  void tick(Cell& cell, int num_protein_copies) const;
   std::string _str() const;
   // See Fig 1 of http://book.bionumbers.org/how-many-reactions-do-enzymes-carry-out-each-second/
   // substrate_concentration in mM, km in mM, kcat in reactions / sec
@@ -236,7 +244,7 @@ ReactionType::ReactionType(const Prokaryotic& pro,
   }
 }
 
-void ReactionType::tick(const Biome& biome, Cell& cell, int num_protein_copies) const
+void ReactionType::tick(Cell& cell, int num_protein_copies) const
 {
   // Simplify: Assume that everything follows Michaelis-Menten kinetics, even for the (presumably majority) of reactions
   // that have multiple substrates.
@@ -415,7 +423,7 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   cytosol_contents_(pro_),
   membrane_contents_(pro_),
   membrane_permeabilities_(pro_),
-  dna_(new DNA)
+  dna_(new DNA(pro))
 {
   membrane_permeabilities_["R"] = 0.0000005;
   membrane_permeabilities_["Phosphate"] = 0.1;
@@ -473,7 +481,7 @@ void Cell::tick(const Biome& biome)
   // In-cell reactions.  For now we are assuming all reactions require a protein.
   for (auto mt : pro_.moleculeTypes()) {
     if (mt->reaction_) {
-      mt->reaction_->tick(biome, *this, cytosol_contents_[mt->idx_]);
+      mt->reaction_->tick(*this, cytosol_contents_[mt->idx_]);
     }
   }
 
@@ -495,14 +503,38 @@ void DNA::tick(Cell& cell) const
 {
   // Eventually this code will be programmable by the player.  For now we're just hardcoding it.
 
+  transcription_factors_.vals_ = 0;
+  
   // Probably better would be something that adjusts the rate of ribosomal construction of ATP Synthase based on the
   // concentration of ATP Synthase.
   if (cell.cytosol_contents_["ATP Synthase"] < 200) {
     // Run the reaction that generates ATP Synthase.
     // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
     // Approx 5 ATP for each amino acid in the sequence.
-    // 200 amino acids per minute made by ribosomes.
+    // 200 amino acids per minute made by ribosomes.  This is ~3 / second.  Maybe this is how we set kcat for the ribosome, and then
+    // the synthesis rate drops if there aren't enough building blocks around.  Not sure how to set the KM values though.
+    // Typically 100-600 amino acids per protein.  (Some are crazy long, but maybe that is just eukaryotes..)
+    // Probably we want to ignore the fact that it's 3aa / second and just absorb that into kcat though.
+    // ReactionType for protein synthesis is just a ReactionType stored in DNA class (which includes ribosome count) with kcat
+    // set by num_aa of the protein, and num_protein_copies is determined by the number of ribosomes assigned to this protein.
+    // That in turn is set by a distribution over genes that the user can set, also in the DNA programming - you can set promotion
+    // factors in R^+, one for each gene, and ribosomes get assigned to genes according to a normalized distribution over genes.
+    transcription_factors_["ATP Synthase"] = 1.0;
   }
+
+  // This part the user cannot touch.
+
+  // If the transcription factors sum to greater than one, make them sum to one.
+  // Otherwise leave them alone.
+  MoleculeVals normalized_transcription_factors(pro_);
+  if (transcription_factors_.vals_.sum() > 1.0)
+    normalized_transcription_factors.vals_ = transcription_factors_.vals_ / transcription_factors_.vals_.sum();
+  else
+    normalized_transcription_factors.vals_ = transcription_factors_.vals_;
+  
+  for (int i = 0; i < transcription_factors_.vals_.size(); ++i) {
+    if (synthesis_reactions_[i] && normalized_transcription_factors[i] > 0)
+      synthesis_reactions_[i]->tick(*this, cell.cytosol_contents_["Ribosome"] * normalized_transcription_factors[i]);
 }
 
 Prokaryotic::Prokaryotic()
