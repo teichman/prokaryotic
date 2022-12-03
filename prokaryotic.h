@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <limits>
 #include <Eigen/Dense>
 #include <cassert>
