@@ -46,13 +46,40 @@ TEST_CASE("Half life")
   CHECK(population == doctest::Approx(0.5));
 }
 
-TEST_CASE("2")
+TEST_CASE("Membrane permeability")
 {
   Prokaryotic pro;
-
-  biomes_.push_back(Biome::Ptr(new Biome(*this, 10, "Alkaline vents")));
-  biomes_[0]->concentrations_["Phosphate"] = 0.01;
-  biomes_[0]->concentrations_["R"] = 0;
-  biomes_[0]->concentrations_["X"] = 10;
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType("Phosphate", "P", 94.97)));
   
+  Cell::Ptr cell(new Cell(pro, "cell"));
+  cell->membrane_permeabilities_["Phosphate"] = 0.1;
+  pro.cells_.push_back(cell);
+
+  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+  biome->concentrations_["Phosphate"] = 10;
+  pro.biomes_.push_back(biome);
+
+  cout << "Before" << endl;
+  cout << biome->str() << endl;
+  cout << cell->str() << endl;
+
+  for (int i = 0; i < 1000; ++i)
+    pro.tick();
+
+  cout << "------------------------------" << endl;
+  cout << "After" << endl;
+  cout << biome->str() << endl;
+  cout << cell->str() << endl;
+  cout << "Cytosol concentrations: " << endl;
+  cout << cell->cytosolConcentrations().str("  ") << endl;
+  
+  CHECK(cell->cytosolConcentrations()["Phosphate"] == doctest::Approx(biome->concentrations_["Phosphate"]));
+
+  cell->um3_ *= 0.5;
+  CHECK(cell->cytosolConcentrations()["Phosphate"] == doctest::Approx(2.0 * biome->concentrations_["Phosphate"]));
+
+  for (int i = 0; i < 1000; ++i)
+    pro.tick();
+
+  CHECK(cell->cytosolConcentrations()["Phosphate"] == doctest::Approx(biome->concentrations_["Phosphate"]));
 }

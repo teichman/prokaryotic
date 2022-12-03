@@ -208,9 +208,6 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   membrane_permeabilities_(pro_),
   dna_(new DNA(pro_))
 {
-  membrane_permeabilities_["R"] = 0.0000005;
-  membrane_permeabilities_["Phosphate"] = 0.1;
-  membrane_permeabilities_["X"] = 0.001;
 }
 
 std::string Cell::_str() const
@@ -284,6 +281,8 @@ void Cell::tick(const Biome& biome)
 
 void DNA::tick(Cell& cell)
 {
+  return;
+  
   transcription_factors_.vals_.setZero();
 
   // Eventually this code will be programmable by the player.  For now we're just hardcoding it.
@@ -410,6 +409,9 @@ void Prokaryotic::initializeHardcoded()
   //   cout << mt->str() << endl;
 
   cells_.push_back(Cell::Ptr(new Cell(*this, "aoeu")));
+  cells_[0]->membrane_permeabilities_["R"] = 0.0000005;
+  cells_[0]->membrane_permeabilities_["Phosphate"] = 0.1;
+  cells_[0]->membrane_permeabilities_["X"] = 0.001;
   
   biomes_.push_back(Biome::Ptr(new Biome(*this, 10, "Alkaline vents")));
   biomes_[0]->concentrations_["Phosphate"] = 0.01;

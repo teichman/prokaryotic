@@ -218,12 +218,13 @@ public:
   void runTests();
   void initializeHardcoded();
 
-private:
+//private:
   std::vector<MoleculeType::Ptr> molecule_types_;
   std::map<std::string, MoleculeType::Ptr> molecule_map_;
   std::vector<Biome::Ptr> biomes_;
   std::vector<Cell::Ptr> cells_;
 
+private:
   MoleculeType::Ptr _molecule(const std::string& name) const {
     assert(molecule_map_.find(name) != molecule_map_.end());
     return molecule_map_.at(name);
