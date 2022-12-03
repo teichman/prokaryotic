@@ -10,5 +10,9 @@ clean:
 	rm -rf build
 
 test: prokaryotic
-	build/test
+	@echo
+	@echo "============================================================"
+	@echo "= Running tests"
+	@echo "============================================================"
+	build/test -s
 

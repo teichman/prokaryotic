@@ -5,7 +5,7 @@
 using std::cout, std::endl;
 using Eigen::ArrayXd, Eigen::VectorXd;
 
-TEST_CASE("aoeau") {
+TEST_CASE("Basics") {
   Prokaryotic pro;
   pro.initializeHardcoded();
 
@@ -19,19 +19,40 @@ TEST_CASE("aoeau") {
   cout << "Concentrations: " << endl;
   cout << concentrations.str("  ") << endl;
 
-  cout << "Round trip test" << endl;
-  MoleculeVals contents2 = Cell::cytosolContents(pro, concentrations, um3);
-  cout << "Counts: " << endl;
-  cout << contents2.str("  ") << endl;
-  
-  CHECK(1 == 1);
-  CHECK(cytosol_contents.size() == contents2.size());
+  SUBCASE("Cytosol contents / concentration round trip test") {
+    cout << "Round trip test" << endl;
+    MoleculeVals cytosol_contents2 = Cell::cytosolContents(pro, concentrations, um3);
+    cout << "Counts: " << endl;
+    cout << cytosol_contents2.str("  ") << endl;
+    CHECK(cytosol_contents.size() == cytosol_contents2.size());
+    CHECK((cytosol_contents.vals_ - cytosol_contents2.vals_).matrix().norm() == 0);  // array doesn't have norm(), really?
+  }
+}
 
-  // VectorXd difference = (cytosol_contents.vals_ - contents2.vals_).matrix().norm();
-  // CHECK(difference.norm() == 0);
+TEST_CASE("Half life")
+{
+  double half_life_hours = 1.0;
+  double p_denature = probabilityPerSecond(half_life_hours);
+  cout << "half_life_hours: " << half_life_hours << endl;
+  cout << "p_denature per tick: " << p_denature << endl;
 
-  CHECK((cytosol_contents.vals_ - contents2.vals_).matrix().norm() == 0);
+  double population = 1.0;
+  int num_ticks = 0;
+  for (int i = 0; i < int(half_life_hours * 60 * 60); ++i) {
+    population *= (1.0 - p_denature);
+    num_ticks += 1;
+  }
+  cout << "After " << num_ticks << " ticks, population is now " << population << endl;
+  CHECK(population == doctest::Approx(0.5));
+}
+
+TEST_CASE("2")
+{
+  Prokaryotic pro;
+
+  biomes_.push_back(Biome::Ptr(new Biome(*this, 10, "Alkaline vents")));
+  biomes_[0]->concentrations_["Phosphate"] = 0.01;
+  biomes_[0]->concentrations_["R"] = 0;
+  biomes_[0]->concentrations_["X"] = 10;
   
-  // for (int i = 0; i < cytosol_contents.size(); ++i)
-  //   CHECK(cytosol_contents.vals_[i] == contents2.vals_[i]);
 }

@@ -145,28 +145,28 @@ public:
 };
 
 
-// // Contains the high level scripts for the cell.
-// // e.g. high level functions like divide() are here.
-// // This is where cell division happens based on some conditions, and protein synthesis regulation.
-// // We're going to gloss over transcriptional vs translational regulation for now and just combine them into one big thing.
-// class DNA : public Printable
-// {
-// public:
-//   typedef std::shared_ptr<const DNA> ConstPtr;
-//   typedef std::shared_ptr<DNA> Ptr;
+// Contains the high level scripts for the cell.
+// e.g. high level functions like divide() are here.
+// This is where cell division happens based on some conditions, and protein synthesis regulation.
+// We're going to gloss over transcriptional vs translational regulation for now and just combine them into one big thing.
+class DNA : public Printable
+{
+public:
+  typedef std::shared_ptr<const DNA> ConstPtr;
+  typedef std::shared_ptr<DNA> Ptr;
 
-//   const Prokaryotic& pro_;
-//   // transcription_factors_ adjust the distribution of ribosomes to genes.
-//   // User can set write simple scripts to change the transcription_factors_ in response to various things
-//   // If the sum is zero, no ribosomes will do anything.
-//   // If the sum is greater than 1, the distribution will be normalized.
-//   MoleculeVals transcription_factors_;
-//   std::vector<ReactionType::ConstPtr> synthesis_reactions_;
+  const Prokaryotic& pro_;
+  // transcription_factors_ adjust the distribution of ribosomes to genes.
+  // User can set write simple scripts to change the transcription_factors_ in response to various things
+  // If the sum is zero, no ribosomes will do anything.
+  // If the sum is greater than 1, the distribution will be normalized.
+  MoleculeVals transcription_factors_;
+  std::vector<ReactionType::ConstPtr> synthesis_reactions_;
   
-//   DNA(const Prokaryotic& pro) : pro_(pro), transcription_factors_(pro) {}
-//   void tick(Cell& cell) const;
-//   std::string _str() const { return ""; }
-// };
+  DNA(const Prokaryotic& pro) : pro_(pro), transcription_factors_(pro) {}
+  void tick(Cell& cell);
+  std::string _str() const { return ""; }
+};
 
 class Cell : public Printable
 {
@@ -180,7 +180,7 @@ public:
   MoleculeVals cytosol_contents_;
   MoleculeVals membrane_contents_;
   MoleculeVals membrane_permeabilities_;
-  // DNA::Ptr dna_;  // non-const so Prokaryotic can make changes to it.
+  DNA::Ptr dna_;  // non-const so Prokaryotic can make changes to it.
   
   Cell(const Prokaryotic& pro, const std::string& name);
 

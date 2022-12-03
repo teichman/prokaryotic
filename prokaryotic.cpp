@@ -2,6 +2,9 @@
 #include <chrono>
 #include <thread>
 #include <iostream>
+#include <Eigen/Eigen>
+#include <Eigen/Core>
+#include <Eigen/Dense>
 
 
 using std::shared_ptr;
@@ -202,8 +205,8 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   um3_(1.0),
   cytosol_contents_(pro_),
   membrane_contents_(pro_),
-  membrane_permeabilities_(pro_)
-  // dna_(new DNA(pro))
+  membrane_permeabilities_(pro_),
+  dna_(new DNA(pro_))
 {
   membrane_permeabilities_["R"] = 0.0000005;
   membrane_permeabilities_["Phosphate"] = 0.1;
@@ -273,52 +276,56 @@ void Cell::tick(const Biome& biome)
     if (mt->pDenature() > 0)
       cytosol_contents_[mt->idx_] *= (1.0 - mt->pDenature());
 
-  // // Apply "DNA programming"
-  // dna_->tick(*this);
+  // Apply "DNA programming"
+  dna_->tick(*this);
   
   cytosol_contents_.probabilisticRound();
 }
 
-// void DNA::tick(Cell& cell) const
-// {
-//   // Eventually this code will be programmable by the player.  For now we're just hardcoding it.
+void DNA::tick(Cell& cell)
+{
+  transcription_factors_.vals_.setZero();
 
-//   transcription_factors_.vals_ = 0;
+  // Eventually this code will be programmable by the player.  For now we're just hardcoding it.
+  // Probably better would be something that adjusts the rate of ribosomal construction of ATP Synthase based on the
+  // concentration of ATP Synthase.
+  if (cell.cytosol_contents_["ATP Synthase"] < 200) {
+    // Run the reaction that generates ATP Synthase.
+    // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
+    // Approx 5 ATP for each amino acid in the sequence.
+    // 200 amino acids per minute made by ribosomes.  This is ~3 / second.  Maybe this is how we set kcat for the ribosome, and then
+    // the synthesis rate drops if there aren't enough building blocks around.  Not sure how to set the KM values though.
+    // Typically 100-600 amino acids per protein.  (Some are crazy long, but maybe that is just eukaryotes..)
+    // Probably we want to ignore the fact that it's 3aa / second and just absorb that into kcat though.
+    // ReactionType for protein synthesis is just a ReactionType stored in DNA class (which includes ribosome count) with kcat
+    // set by num_aa of the protein, and num_protein_copies is determined by the number of ribosomes assigned to this protein.
+    // That in turn is set by a distribution over genes that the user can set, also in the DNA programming - you can set promotion
+    // factors in R^+, one for each gene, and ribosomes get assigned to genes according to a normalized distribution over genes.
+    transcription_factors_["ATP Synthase"] = 1.0;
+  }
+
+  // This part the user cannot touch.
+
+  // If the transcription factors sum to greater than one, make them sum to one.
+  // Otherwise leave them alone.
+  MoleculeVals normalized_transcription_factors(pro_);
+  if (transcription_factors_.vals_.sum() > 1.0)
+    normalized_transcription_factors.vals_ = transcription_factors_.vals_ / transcription_factors_.vals_.sum();
+  else
+    normalized_transcription_factors.vals_ = transcription_factors_.vals_;
   
-//   1// Probably better would be something that adjusts the rate of ribosomal construction of ATP Synthase based on the
-//   // concentration of ATP Synthase.
-//   if (cell.cytosol_contents_["ATP Synthase"] < 200) {
-//     // Run the reaction that generates ATP Synthase.
-//     // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
-//     // Approx 5 ATP for each amino acid in the sequence.
-//     // 200 amino acids per minute made by ribosomes.  This is ~3 / second.  Maybe this is how we set kcat for the ribosome, and then
-//     // the synthesis rate drops if there aren't enough building blocks around.  Not sure how to set the KM values though.
-//     // Typically 100-600 amino acids per protein.  (Some are crazy long, but maybe that is just eukaryotes..)
-//     // Probably we want to ignore the fact that it's 3aa / second and just absorb that into kcat though.
-//     // ReactionType for protein synthesis is just a ReactionType stored in DNA class (which includes ribosome count) with kcat
-//     // set by num_aa of the protein, and num_protein_copies is determined by the number of ribosomes assigned to this protein.
-//     // That in turn is set by a distribution over genes that the user can set, also in the DNA programming - you can set promotion
-//     // factors in R^+, one for each gene, and ribosomes get assigned to genes according to a normalized distribution over genes.
-//     transcription_factors_["ATP Synthase"] = 1.0;
-//   }
-
-//   // This part the user cannot touch.
-
-//   // If the transcription factors sum to greater than one, make them sum to one.
-//   // Otherwise leave them alone.
-//   MoleculeVals normalized_transcription_factors(pro_);
-//   if (transcription_factors_.vals_.sum() > 1.0)
-//     normalized_transcription_factors.vals_ = transcription_factors_.vals_ / transcription_factors_.vals_.sum();
-//   else
-//     normalized_transcription_factors.vals_ = transcription_factors_.vals_;
-  
-//   for (int i = 0; i < transcription_factors_.vals_.size(); ++i) {
-//     if (synthesis_reactions_[i] && normalized_transcription_factors[i] > 0)
-//       synthesis_reactions_[i]->tick(*this, cell.cytosol_contents_["Ribosome"] * normalized_transcription_factors[i]);
-// }
+  for (int i = 0; i < transcription_factors_.vals_.size(); ++i)
+    if (synthesis_reactions_[i] && normalized_transcription_factors[i] > 0)
+      synthesis_reactions_[i]->tick(cell, cell.cytosol_contents_["Ribosome"] * normalized_transcription_factors[i]);
+}
 
 Prokaryotic::Prokaryotic()
 {}
+
+// void Prokaryotic::initializeCore()
+// {
+
+// }
 
 void Prokaryotic::initializeHardcoded()
 {
@@ -399,8 +406,8 @@ void Prokaryotic::initializeHardcoded()
     _molecule("ATP Consumer")->reaction_ = ReactionType::ConstPtr(new ReactionType(*this, inputs, outputs, kms, kcat));
   }
   
-  for (auto mt : molecule_types_)
-    cout << mt->str() << endl;
+  // for (auto mt : molecule_types_)
+  //   cout << mt->str() << endl;
 
   cells_.push_back(Cell::Ptr(new Cell(*this, "aoeu")));
   
@@ -414,7 +421,7 @@ void Prokaryotic::initializeHardcoded()
   cells_[0]->cytosol_contents_["ATP Synthase"] = 1e4;
   cells_[0]->cytosol_contents_["ATP Consumer"] = 1e3;
 
-  cout << str() << endl;
+  // cout << str() << endl;
 }
 
 std::string Prokaryotic::_str() const
