@@ -90,7 +90,8 @@ TEST_CASE("Membrane permeability")
 TEST_CASE("Ribosome")
 {
   Prokaryotic pro;
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", ":hammer:", 5e5)));
+  double half_life_hours = 0.5;
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", ":hammer:", 5e5, half_life_hours)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", ":factory:", 2e6)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", ":briefcase:", 423.17)));
   
@@ -114,8 +115,8 @@ TEST_CASE("Ribosome")
     MoleculeVals outputs(pro);
     outputs["ATP Synthase"] = 1;
     MoleculeVals kms(pro);
-    kms["ADP"] = 1e-1;
-    double kcat = 0.001;
+    kms["ADP"] = 1e-3;
+    double kcat = 0.1;
     ReactionType::ConstPtr rt(new ReactionType(pro, inputs, outputs, kms, kcat));
     cell->dna_->synthesis_reactions_[pro.moleculeIdx("ATP Synthase")] = rt;
   }
@@ -133,11 +134,18 @@ TEST_CASE("Ribosome")
   // and changing that will break this test.  That's ok.
   cout << "----------------------------------------" << endl;
   cout << "Added building blocks to make ATP Synthase out of. " << endl;
-  cell->cytosol_contents_["ADP"] = 1e6;
+  cell->cytosol_contents_["ADP"] = 300;
   for (int i = 0; i < 1000; ++i)
     pro.tick();
   cout << cell->str() << endl;
-  CHECK(cell->cytosol_contents_["ATP Synthase"] > 150);
-  CHECK(cell->cytosol_contents_["ATP Synthase"] < 250);
+  CHECK(cell->cytosol_contents_["ATP Synthase"] > 190);
+  CHECK(cell->cytosol_contents_["ATP Synthase"] < 210);
+
+  cout << "----------------------------------------" << endl;
+  cout << "ATP Synthase breaks down and we run out of building blocks. " << endl;
+  for (int i = 0; i < 10000; ++i)
+    pro.tick();
+  cout << cell->str() << endl;
+  CHECK(cell->cytosol_contents_["ATP Synthase"] < 10);
 }
 
