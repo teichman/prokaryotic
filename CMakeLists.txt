@@ -8,6 +8,9 @@ find_package(Eigen3 REQUIRED NO_MODULE)
 project(prokaryotic)
 include_directories(.)
 
+add_compile_options(-fsanitize=address)
+add_link_options(-fsanitize=address)
+
 add_library(prokaryotic SHARED prokaryotic.h doctest.h prokaryotic.cpp)
 target_link_libraries(prokaryotic Eigen3::Eigen)
 
