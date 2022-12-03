@@ -5,7 +5,7 @@
 using std::cout, std::endl;
 using Eigen::ArrayXd, Eigen::VectorXd;
 
-TEST_CASE("Basics") {
+TEST_CASE("Cytosol concentrations / contents round trip") {
   Prokaryotic pro;
   pro.initializeHardcoded();
 
@@ -75,11 +75,14 @@ TEST_CASE("Membrane permeability")
   
   CHECK(cell->cytosolConcentrations()["Phosphate"] == doctest::Approx(biome->concentrations_["Phosphate"]));
 
+  // If the cell magically shrinks, the concentration goes up.
+  // This maybe actually isn't the right behavior but it's by design for now.
   cell->um3_ *= 0.5;
   CHECK(cell->cytosolConcentrations()["Phosphate"] == doctest::Approx(2.0 * biome->concentrations_["Phosphate"]));
 
   for (int i = 0; i < 1000; ++i)
     pro.tick();
 
+  // Confirm it re-equalized.
   CHECK(cell->cytosolConcentrations()["Phosphate"] == doctest::Approx(biome->concentrations_["Phosphate"]));
 }
