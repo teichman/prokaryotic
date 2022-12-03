@@ -86,3 +86,58 @@ TEST_CASE("Membrane permeability")
   // Confirm it re-equalized.
   CHECK(cell->cytosolConcentrations()["Phosphate"] == doctest::Approx(biome->concentrations_["Phosphate"]));
 }
+
+TEST_CASE("Ribosome")
+{
+  Prokaryotic pro;
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", ":hammer:", 5e5)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", ":factory:", 2e6)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", ":briefcase:", 423.17)));
+  
+  Cell::Ptr cell(new Cell(pro, "cell"));
+  pro.cells_.push_back(cell);
+  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+  pro.biomes_.push_back(biome);
+
+  cout << pro.str() << endl;
+
+  // Confirm that ribosomes don't leak out or degenerate as configured above.
+  cell->cytosol_contents_["Ribosome"] = 1000;
+  for (int i = 0; i < 1000; ++i)
+    pro.tick();
+  CHECK(cell->cytosol_contents_["Ribosome"] == 1000);
+
+  // Add a reaction that generates ATP Synthase.
+  {
+    MoleculeVals inputs(pro);
+    inputs["ADP"] = 1;  // A strange world in which we will fabricate ATP Synthase from 1 molecule of ADP.
+    MoleculeVals outputs(pro);
+    outputs["ATP Synthase"] = 1;
+    MoleculeVals kms(pro);
+    kms["ADP"] = 1e-1;
+    double kcat = 0.001;
+    ReactionType::ConstPtr rt(new ReactionType(pro, inputs, outputs, kms, kcat));
+    cell->dna_->synthesis_reactions_[pro.moleculeIdx("ATP Synthase")] = rt;
+  }
+  
+  // Run it.  We shouldn't get any yet because we don't have any building blocks to make the ATP Synthase from.
+  cout << "----------------------------------------" << endl;
+  cout << "Added reaction to make ATP Synthase, but no building blocks here. " << endl;
+  for (int i = 0; i < 1000; ++i)
+    pro.tick();
+  cout << cell->str() << endl;
+  CHECK(cell->cytosol_contents_["ATP Synthase"] == 0);
+
+  // Now add the building blocks.  We should get some ATP Synthase.
+  // Ofc this depends on the "DNA programming" the user will do, and right now that's hardcoded,
+  // and changing that will break this test.  That's ok.
+  cout << "----------------------------------------" << endl;
+  cout << "Added building blocks to make ATP Synthase out of. " << endl;
+  cell->cytosol_contents_["ADP"] = 1e6;
+  for (int i = 0; i < 1000; ++i)
+    pro.tick();
+  cout << cell->str() << endl;
+  CHECK(cell->cytosol_contents_["ATP Synthase"] > 150);
+  CHECK(cell->cytosol_contents_["ATP Synthase"] < 250);
+}
+

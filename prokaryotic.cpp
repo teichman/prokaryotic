@@ -155,6 +155,11 @@ std::string MoleculeVals::_str() const
   return oss.str();
 }
 
+bool MoleculeVals::hasMolecule(const std::string& name) const
+{
+  return pro_.hasMolecule(name);
+}
+
 const double& MoleculeVals::operator[](const std::string& name) const
 {
   return vals_.coeffRef(pro_.moleculeIdx(name));
@@ -279,16 +284,26 @@ void Cell::tick(const Biome& biome)
   cytosol_contents_.probabilisticRound();
 }
 
+DNA::DNA(const Prokaryotic& pro) :
+  pro_(pro),
+  transcription_factors_(pro),
+  synthesis_reactions_(transcription_factors_.vals_.size(), ReactionType::ConstPtr(nullptr))
+{
+  
+}
+
 void DNA::tick(Cell& cell)
 {
-  return;
+  // In testing, sometimes we don't have ribosomes.
+  if (!cell.cytosol_contents_.hasMolecule("Ribosome"))
+    return;
   
   transcription_factors_.vals_.setZero();
 
   // Eventually this code will be programmable by the player.  For now we're just hardcoding it.
   // Probably better would be something that adjusts the rate of ribosomal construction of ATP Synthase based on the
   // concentration of ATP Synthase.
-  if (cell.cytosol_contents_["ATP Synthase"] < 200) {
+  if (cell.cytosol_contents_.hasMolecule("ATP Synthase") && cell.cytosol_contents_["ATP Synthase"] < 200) {
     // Run the reaction that generates ATP Synthase.
     // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
     // Approx 5 ATP for each amino acid in the sequence.
@@ -312,7 +327,8 @@ void DNA::tick(Cell& cell)
     normalized_transcription_factors.vals_ = transcription_factors_.vals_ / transcription_factors_.vals_.sum();
   else
     normalized_transcription_factors.vals_ = transcription_factors_.vals_;
-  
+
+  assert(transcription_factors_.vals_.size() == synthesis_reactions_.size());
   for (int i = 0; i < transcription_factors_.vals_.size(); ++i)
     if (synthesis_reactions_[i] && normalized_transcription_factors[i] > 0)
       synthesis_reactions_[i]->tick(cell, cell.cytosol_contents_["Ribosome"] * normalized_transcription_factors[i]);

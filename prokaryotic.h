@@ -52,6 +52,7 @@ public:
   
   std::string _str() const;
 
+
   // Probably should just always use .vals_ instead of these.
   const double& operator[](int idx) const { return vals_.coeffRef(idx); }
   double& operator[](int idx) { return vals_.coeffRef(idx); }
@@ -59,6 +60,7 @@ public:
   // Provide string access though, for easy setup tasks.
   const double& operator[](const std::string& name) const;
   double& operator[](const std::string& name);
+  bool hasMolecule(const std::string& name) const;
 };
 
 class ReactionType : public Printable
@@ -157,7 +159,7 @@ public:
   MoleculeVals transcription_factors_;
   std::vector<ReactionType::ConstPtr> synthesis_reactions_;
   
-  DNA(const Prokaryotic& pro) : pro_(pro), transcription_factors_(pro) {}
+  DNA(const Prokaryotic& pro);
   void tick(Cell& cell);
   std::string _str() const { return ""; }
 };
@@ -206,6 +208,7 @@ public:
   const std::string& moleculeName(size_t idx) const { return molecule_types_[idx]->name_; }
   std::vector<MoleculeType::ConstPtr> moleculeTypes() const;
   size_t numMoleculeTypes() const { return molecule_types_.size(); }
+  bool hasMolecule(const std::string& name) const { return molecule_map_.find(name) != molecule_map_.end(); }
   
   void tick();
   std::string _str() const;
@@ -221,7 +224,7 @@ public:
 
 private:
   MoleculeType::Ptr _molecule(const std::string& name) const {
-    assert(molecule_map_.find(name) != molecule_map_.end());
+    assert(hasMolecule(name));
     return molecule_map_.at(name);
   }
 };
