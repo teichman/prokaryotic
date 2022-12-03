@@ -49,7 +49,7 @@ TEST_CASE("Half life")
 TEST_CASE("Membrane permeability")
 {
   Prokaryotic pro;
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType("Phosphate", "P", 94.97)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "P", 94.97)));
   
   Cell::Ptr cell(new Cell(pro, "cell"));
   cell->membrane_permeabilities_["Phosphate"] = 0.1;

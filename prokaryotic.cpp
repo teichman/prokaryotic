@@ -70,26 +70,27 @@ double ReactionType::rate(double substrate_concentration, double km, double kcat
   return kcat * substrate_concentration / (km + substrate_concentration);
 }
 
-MoleculeType::MoleculeType(const std::string& name,
+MoleculeType::MoleculeType(const Prokaryotic& pro,
+                           const std::string& name,
                            const std::string& symbol,
                            double daltons,
                            double half_life_hours,
                            ReactionType::ConstPtr reaction) :
-  idx_(num_molecule_types_),
+  idx_(pro.numMoleculeTypes()),
   name_(name),
   symbol_(symbol),
   daltons_(daltons),
   half_life_hours_(half_life_hours),
   reaction_(reaction)
 {
-  num_molecule_types_ += 1;
 }
 
-MoleculeType::MoleculeType(const std::string& name, const std::string& symbol,
+MoleculeType::MoleculeType(const Prokaryotic& pro,
+                           const std::string& name, const std::string& symbol,
                            const std::vector<MoleculeType::ConstPtr>& constituents,
                            double half_life_hours,
                            ReactionType::ConstPtr reaction) :
-  idx_(num_molecule_types_),
+  idx_(pro.numMoleculeTypes()),
   name_(name),
   symbol_(symbol),
   daltons_(0),
@@ -97,7 +98,6 @@ MoleculeType::MoleculeType(const std::string& name, const std::string& symbol,
   constituents_(constituents),
   reaction_(reaction)
 {
-  num_molecule_types_ += 1;
   daltons_ = 0;
   for (auto mt : constituents_)
     daltons_ += mt->daltons_;
@@ -329,21 +329,21 @@ Prokaryotic::Prokaryotic()
 void Prokaryotic::initializeHardcoded()
 {
   // Create all MoleculeTypes first so we avoid the complexity in updating all the MoleculeVals when we add new MoleculeTypes.
-  addMoleculeType(MoleculeType::Ptr(new MoleculeType("ADP", ":briefcase:", 423.17)));
-  addMoleculeType(MoleculeType::Ptr(new MoleculeType("Phosphate", "P", 94.97)));
-  addMoleculeType(MoleculeType::Ptr(new MoleculeType("X", "X", 500)));
+  addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "ADP", ":briefcase:", 423.17)));
+  addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "Phosphate", "P", 94.97)));
+  addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "X", "X", 500)));
   {
     std::vector<MoleculeType::ConstPtr> constituents;
     constituents.push_back(molecule("X"));
     constituents.push_back(molecule("X"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType("R", "R", constituents)));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "R", "R", constituents)));
   }
   
   {
     std::vector<MoleculeType::ConstPtr> constituents;
     constituents.push_back(molecule("ADP"));
     constituents.push_back(molecule("Phosphate"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP", ":bang:", constituents)));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "ATP", ":bang:", constituents)));
   }
 
   { 
@@ -353,7 +353,7 @@ void Prokaryotic::initializeHardcoded()
     constituents.push_back(molecule("R"));
     constituents.push_back(molecule("R"));
     constituents.push_back(molecule("Phosphate"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP Synthase", ":hammer:", constituents, 1.0)));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "ATP Synthase", ":hammer:", constituents, 1.0)));
   }
 
   { 
@@ -363,17 +363,17 @@ void Prokaryotic::initializeHardcoded()
     constituents.push_back(molecule("R"));
     constituents.push_back(molecule("R"));
     constituents.push_back(molecule("Phosphate"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType("ATP Consumer", ":gear:", constituents)));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "ATP Consumer", ":gear:", constituents)));
   }
-  // { 
-  //   std::vector<MoleculeType::ConstPtr> constituents;
-  //   constituents.push_back(molecule("X"));
-  //   constituents.push_back(molecule("X"));
-  //   constituents.push_back(molecule("R"));
-  //   constituents.push_back(molecule("R"));
-  //   constituents.push_back(molecule("Phosphate"));
-  //   addMoleculeType(MoleculeType::Ptr(new MoleculeType("Ribosome", ":factory:", constituents)));
-  // }
+  { 
+    std::vector<MoleculeType::ConstPtr> constituents;
+    constituents.push_back(molecule("X"));
+    constituents.push_back(molecule("X"));
+    constituents.push_back(molecule("R"));
+    constituents.push_back(molecule("R"));
+    constituents.push_back(molecule("Phosphate"));
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "Ribosome", ":factory:", constituents)));
+  }
 
   
   // Now add Reactions to MoleculeTypes.

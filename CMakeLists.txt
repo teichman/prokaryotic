@@ -8,10 +8,10 @@ find_package(Eigen3 REQUIRED NO_MODULE)
 project(prokaryotic)
 include_directories(.)
 
-add_compile_options(-fsanitize=address)
-add_link_options(-fsanitize=address)
+add_compile_options(-fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls -O0)
+add_link_options(-fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls -O0)
 
-add_library(prokaryotic SHARED prokaryotic.h doctest.h prokaryotic.cpp)
+add_library(prokaryotic SHARED prokaryotic.h prokaryotic.cpp)
 target_link_libraries(prokaryotic Eigen3::Eigen)
 
 add_executable(run prokaryotic.h run.cpp)

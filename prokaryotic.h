@@ -106,24 +106,19 @@ public:
   std::vector<MoleculeType::ConstPtr> constituents_;
   ReactionType::ConstPtr reaction_;  // If a protein, this is the reaction it catalyzes 
 
-  MoleculeType(const std::string& name, const std::string& symbol, double daltons,
+  MoleculeType(const Prokaryotic& pro,
+               const std::string& name, const std::string& symbol, double daltons,
                double half_life_hours = std::numeric_limits<double>::max(),
                ReactionType::ConstPtr reaction = ReactionType::ConstPtr(nullptr));
-  MoleculeType(const std::string& name, const std::string& symbol,
+  MoleculeType(const Prokaryotic& pro,
+               const std::string& name, const std::string& symbol,
                const std::vector<MoleculeType::ConstPtr>& constituents,
                double half_life_hours = std::numeric_limits<double>::max(),
                ReactionType::ConstPtr reaction = ReactionType::ConstPtr(nullptr));
   
   std::string _str() const;
-  static size_t numMoleculeTypes() { return num_molecule_types_; }
   double pDenature() const { return probabilityPerSecond(half_life_hours_); }
-  
-private:
-  static size_t num_molecule_types_;
-  friend class MoleculeVals;
 };
-
-size_t MoleculeType::num_molecule_types_ = 0;
 
 class Biome : public Printable
 {
@@ -210,6 +205,7 @@ public:
   size_t moleculeIdx(const std::string& name) const { return molecule(name)->idx_; }
   const std::string& moleculeName(size_t idx) const { return molecule_types_[idx]->name_; }
   std::vector<MoleculeType::ConstPtr> moleculeTypes() const;
+  size_t numMoleculeTypes() const { return molecule_types_.size(); }
   
   void tick();
   std::string _str() const;
