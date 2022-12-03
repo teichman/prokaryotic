@@ -42,29 +42,6 @@ public:
   }
 };
 
-// Contains the high level scripts for the cell.
-// e.g. high level functions like divide() are here.
-// This is where cell division happens based on some conditions, and protein synthesis regulation.
-// We're going to gloss over transcriptional vs translational regulation for now and just combine them into one big thing.
-class DNA : public Printable
-{
-public:
-  typedef std::shared_ptr<const DNA> ConstPtr;
-  typedef std::shared_ptr<DNA> Ptr;
-
-  const Prokaryotic& pro_;
-  // transcription_factors_ adjust the distribution of ribosomes to genes.
-  // User can set write simple scripts to change the transcription_factors_ in response to various things
-  // If the sum is zero, no ribosomes will do anything.
-  // If the sum is greater than 1, the distribution will be normalized.
-  MoleculeVals transcription_factors_;
-  std::vector<ReactionType::ConstPtr> synthesis_reactions_;
-  
-  DNA(const Prokaryotic& pro) : pro_(pro) {}
-  void tick(Cell& cell) const;
-  std::string _str() const { return ""; }
-};
-
 class MoleculeVals : public Printable
 {
 public:
@@ -167,6 +144,30 @@ public:
   void tick();
 };
 
+
+// // Contains the high level scripts for the cell.
+// // e.g. high level functions like divide() are here.
+// // This is where cell division happens based on some conditions, and protein synthesis regulation.
+// // We're going to gloss over transcriptional vs translational regulation for now and just combine them into one big thing.
+// class DNA : public Printable
+// {
+// public:
+//   typedef std::shared_ptr<const DNA> ConstPtr;
+//   typedef std::shared_ptr<DNA> Ptr;
+
+//   const Prokaryotic& pro_;
+//   // transcription_factors_ adjust the distribution of ribosomes to genes.
+//   // User can set write simple scripts to change the transcription_factors_ in response to various things
+//   // If the sum is zero, no ribosomes will do anything.
+//   // If the sum is greater than 1, the distribution will be normalized.
+//   MoleculeVals transcription_factors_;
+//   std::vector<ReactionType::ConstPtr> synthesis_reactions_;
+  
+//   DNA(const Prokaryotic& pro) : pro_(pro), transcription_factors_(pro) {}
+//   void tick(Cell& cell) const;
+//   std::string _str() const { return ""; }
+// };
+
 class Cell : public Printable
 {
 public:
@@ -179,7 +180,7 @@ public:
   MoleculeVals cytosol_contents_;
   MoleculeVals membrane_contents_;
   MoleculeVals membrane_permeabilities_;
-  DNA::Ptr dna_;  // non-const so Prokaryotic can make changes to it.
+  // DNA::Ptr dna_;  // non-const so Prokaryotic can make changes to it.
   
   Cell(const Prokaryotic& pro, const std::string& name);
 
@@ -422,8 +423,8 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   um3_(1.0),
   cytosol_contents_(pro_),
   membrane_contents_(pro_),
-  membrane_permeabilities_(pro_),
-  dna_(new DNA(pro))
+  membrane_permeabilities_(pro_)
+  // dna_(new DNA(pro))
 {
   membrane_permeabilities_["R"] = 0.0000005;
   membrane_permeabilities_["Phosphate"] = 0.1;
@@ -493,49 +494,49 @@ void Cell::tick(const Biome& biome)
     if (mt->pDenature() > 0)
       cytosol_contents_[mt->idx_] *= (1.0 - mt->pDenature());
 
-  // Apply "DNA programming"
-  dna_->tick(*this);
+  // // Apply "DNA programming"
+  // dna_->tick(*this);
   
   cytosol_contents_.probabilisticRound();
 }
 
-void DNA::tick(Cell& cell) const
-{
-  // Eventually this code will be programmable by the player.  For now we're just hardcoding it.
+// void DNA::tick(Cell& cell) const
+// {
+//   // Eventually this code will be programmable by the player.  For now we're just hardcoding it.
 
-  transcription_factors_.vals_ = 0;
+//   transcription_factors_.vals_ = 0;
   
-  // Probably better would be something that adjusts the rate of ribosomal construction of ATP Synthase based on the
-  // concentration of ATP Synthase.
-  if (cell.cytosol_contents_["ATP Synthase"] < 200) {
-    // Run the reaction that generates ATP Synthase.
-    // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
-    // Approx 5 ATP for each amino acid in the sequence.
-    // 200 amino acids per minute made by ribosomes.  This is ~3 / second.  Maybe this is how we set kcat for the ribosome, and then
-    // the synthesis rate drops if there aren't enough building blocks around.  Not sure how to set the KM values though.
-    // Typically 100-600 amino acids per protein.  (Some are crazy long, but maybe that is just eukaryotes..)
-    // Probably we want to ignore the fact that it's 3aa / second and just absorb that into kcat though.
-    // ReactionType for protein synthesis is just a ReactionType stored in DNA class (which includes ribosome count) with kcat
-    // set by num_aa of the protein, and num_protein_copies is determined by the number of ribosomes assigned to this protein.
-    // That in turn is set by a distribution over genes that the user can set, also in the DNA programming - you can set promotion
-    // factors in R^+, one for each gene, and ribosomes get assigned to genes according to a normalized distribution over genes.
-    transcription_factors_["ATP Synthase"] = 1.0;
-  }
+//   1// Probably better would be something that adjusts the rate of ribosomal construction of ATP Synthase based on the
+//   // concentration of ATP Synthase.
+//   if (cell.cytosol_contents_["ATP Synthase"] < 200) {
+//     // Run the reaction that generates ATP Synthase.
+//     // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
+//     // Approx 5 ATP for each amino acid in the sequence.
+//     // 200 amino acids per minute made by ribosomes.  This is ~3 / second.  Maybe this is how we set kcat for the ribosome, and then
+//     // the synthesis rate drops if there aren't enough building blocks around.  Not sure how to set the KM values though.
+//     // Typically 100-600 amino acids per protein.  (Some are crazy long, but maybe that is just eukaryotes..)
+//     // Probably we want to ignore the fact that it's 3aa / second and just absorb that into kcat though.
+//     // ReactionType for protein synthesis is just a ReactionType stored in DNA class (which includes ribosome count) with kcat
+//     // set by num_aa of the protein, and num_protein_copies is determined by the number of ribosomes assigned to this protein.
+//     // That in turn is set by a distribution over genes that the user can set, also in the DNA programming - you can set promotion
+//     // factors in R^+, one for each gene, and ribosomes get assigned to genes according to a normalized distribution over genes.
+//     transcription_factors_["ATP Synthase"] = 1.0;
+//   }
 
-  // This part the user cannot touch.
+//   // This part the user cannot touch.
 
-  // If the transcription factors sum to greater than one, make them sum to one.
-  // Otherwise leave them alone.
-  MoleculeVals normalized_transcription_factors(pro_);
-  if (transcription_factors_.vals_.sum() > 1.0)
-    normalized_transcription_factors.vals_ = transcription_factors_.vals_ / transcription_factors_.vals_.sum();
-  else
-    normalized_transcription_factors.vals_ = transcription_factors_.vals_;
+//   // If the transcription factors sum to greater than one, make them sum to one.
+//   // Otherwise leave them alone.
+//   MoleculeVals normalized_transcription_factors(pro_);
+//   if (transcription_factors_.vals_.sum() > 1.0)
+//     normalized_transcription_factors.vals_ = transcription_factors_.vals_ / transcription_factors_.vals_.sum();
+//   else
+//     normalized_transcription_factors.vals_ = transcription_factors_.vals_;
   
-  for (int i = 0; i < transcription_factors_.vals_.size(); ++i) {
-    if (synthesis_reactions_[i] && normalized_transcription_factors[i] > 0)
-      synthesis_reactions_[i]->tick(*this, cell.cytosol_contents_["Ribosome"] * normalized_transcription_factors[i]);
-}
+//   for (int i = 0; i < transcription_factors_.vals_.size(); ++i) {
+//     if (synthesis_reactions_[i] && normalized_transcription_factors[i] > 0)
+//       synthesis_reactions_[i]->tick(*this, cell.cytosol_contents_["Ribosome"] * normalized_transcription_factors[i]);
+// }
 
 Prokaryotic::Prokaryotic()
 {}
