@@ -1,0 +1,13 @@
+ReactionTable:
+  - formula: ADP + Phosphate -> ATP
+    protein: ATP Synthase
+    kcat: 1e-3
+    KMs:
+      ADP: 1e-1
+      Phosphate: 1e-2
+  - formula: 2 X + ATP -> R + ADP + Phosphate
+    protein: ATP Consumer
+    kcat: 1e-2
+    KMs:
+      X: 1e-1
+      ATP: 1e-3

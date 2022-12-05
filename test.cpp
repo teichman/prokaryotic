@@ -148,3 +148,62 @@ TEST_CASE("Ribosome")
   cout << cell->str() << endl;
   CHECK(cell->cytosol_contents_["ATP Synthase"] < 10);
 }
+
+TEST_CASE("ReactionType YAML")
+{
+  Prokaryotic pro;
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "X", "", 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "R", "", 1)));
+
+  { 
+    YAML::Node yaml = YAML::Load("formula: ADP + Phosphate -> ATP\n"
+                                 "protein: ATP Synthase\n"
+                                 "kcat: 1e-3\n"
+                                 "KMs:\n"
+                                 "  ADP: 1e-1\n"
+                                 "  Phosphate: 1e-2");
+    ReactionType rt(pro, yaml);
+    cout << rt.str() << endl;
+
+    CHECK(rt.inputs_["ADP"] == 1);
+    CHECK(rt.inputs_["Phosphate"] == 1);
+    CHECK(rt.inputs_.vals_.sum() == 2);
+  
+    CHECK(rt.outputs_["ATP"] == 1);
+    CHECK(rt.outputs_.vals_.sum() == 1);
+    CHECK(rt.kcat_ == 1e-3);
+
+    CHECK(rt.kms_["ADP"] == 1e-1);
+    CHECK(rt.kms_["Phosphate"] == 1e-2);
+    CHECK(rt.kms_.vals_.sum() == rt.kms_["ADP"] + rt.kms_["Phosphate"]);
+  }
+
+  { 
+    YAML::Node yaml = YAML::Load("formula: 2 X + ATP -> R + ADP + Phosphate\n"
+                                 "protein: ATP Consumer\n"
+                                 "kcat: 1e-2\n"
+                                 "KMs:\n"
+                                 "  X: 1e-1\n"
+                                 "  ATP: 1e-3\n");
+    ReactionType rt(pro, yaml);
+    cout << rt.str() << endl;
+
+    CHECK(rt.inputs_["X"] == 2);
+    CHECK(rt.inputs_["ATP"] == 1);
+    CHECK(rt.inputs_.vals_.sum() == 3);
+  
+    CHECK(rt.outputs_["R"] == 1);
+    CHECK(rt.outputs_["ADP"] == 1);
+    CHECK(rt.outputs_["Phosphate"] == 1);
+    CHECK(rt.outputs_.vals_.sum() == 3);
+    
+    CHECK(rt.kcat_ == 1e-2);
+    CHECK(rt.kms_["X"] == 1e-1);
+    CHECK(rt.kms_["ATP"] == 1e-3);
+    CHECK(rt.kms_.vals_.sum() == rt.kms_["X"] + rt.kms_["ATP"]);
+  }
+  
+}

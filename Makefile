@@ -2,9 +2,9 @@
 # cmake is sufficiently annoying that we are wrapping it in Make
 
 .PHONY: prokaryotic  # Always do cmake && make.
-prokaryotic: # proto/addressbook.pb.h proto/addressbook.pb.cc
+prokaryotic:
 	mkdir -p build
-	cd build && cmake ../ && make
+	cd build && cmake ../ && make -j 8
 
 clean:
 	rm -rf build CMakeFiles
@@ -24,6 +24,6 @@ run: prokaryotic
 	@echo "============================================================"
 	build/run
 
-# proto/addressbook.pb.h proto/addressbook.pb.cc &: proto/addressbook.proto
-# 	/opt/homebrew/Cellar/protobuf/21.9_1/bin/protoc -I=proto/ --cpp_out=proto/ proto/addressbook.proto
+debug_snippet: prokaryotic
+	lldb -o run -- build/debug_snippet
 

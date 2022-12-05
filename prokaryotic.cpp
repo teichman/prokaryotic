@@ -10,7 +10,74 @@
 using std::shared_ptr;
 using std::cout, std::endl;
 using std::vector;
+using std::string;
 using Eigen::ArrayXd;
+
+
+vector<string> tokenize_simple(const std::string& s)
+{
+  vector<string> tokens;
+  std::stringstream ss(s);
+  string word;
+  while (ss >> word)
+    tokens.push_back(word);
+  return tokens;
+}
+
+bool is_number(const std::string& s)
+{
+  std::string::const_iterator it = s.begin();
+  while (it != s.end() && std::isdigit(*it)) ++it;
+  return !s.empty() && it == s.end();
+}
+
+void ReactionType::parseHalfFormula(const std::vector<std::string>& tokens, size_t startidx, size_t endidx, MoleculeVals* mvals)
+{
+  double coeff = 1.0;
+  string molecule_name = "";
+  for (size_t i = startidx; i < endidx; ++i) {
+    if (is_number(tokens[i]))
+      coeff = atof(tokens[i].c_str());
+    else if (tokens[i] == "+")
+      continue;
+    else {
+      (*mvals)[tokens[i]] = coeff;
+      coeff = 1.0;
+      molecule_name = "";
+    }
+  }
+}
+
+void ReactionType::parseFormula(const std::string& formula)
+{
+  vector<string> tokens = tokenize_simple(formula);
+  int sep = -1;
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (tokens[i] == "->") {
+      parseHalfFormula(tokens, 0, i, &inputs_);
+      sep = i;
+    }
+  }
+  parseHalfFormula(tokens, sep+1, tokens.size(), &outputs_);
+}
+
+ReactionType::ReactionType(const Prokaryotic& pro, const YAML::Node& yaml) :
+  pro_(pro),
+  inputs_(pro),
+  outputs_(pro),
+  kms_(pro)
+{
+  string formula = yaml["formula"].as<string>();
+  parseFormula(formula);
+  
+  kcat_ = yaml["kcat"].as<double>();
+  
+  for (YAML::const_iterator kmit = yaml["KMs"].begin(); kmit != yaml["KMs"].end(); ++kmit) {
+    string molecule_name = kmit->first.as<string>();
+    double km = kmit->second.as<double>();
+    kms_[molecule_name] = km;
+  }    
+}
 
 ReactionType::ReactionType(const Prokaryotic& pro,
                            const MoleculeVals& inputs, const MoleculeVals& outputs,

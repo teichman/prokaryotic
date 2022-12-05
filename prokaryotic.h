@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <yaml-cpp/yaml.h>
 
 class Prokaryotic;
 class Cell;
@@ -73,7 +74,8 @@ public:
   MoleculeVals outputs_;
   MoleculeVals kms_;  // concentrations that yield half the max rate.  Each element is mM.
   double kcat_;  // max rate per tick (1 tick is 1 second?)
-  
+
+  ReactionType(const Prokaryotic& pro, const YAML::Node& yaml);
   ReactionType(const Prokaryotic& pro,
                const MoleculeVals& inputs, const MoleculeVals& outputs,
                const MoleculeVals& kms, double kcat);
@@ -82,6 +84,10 @@ public:
   // See Fig 1 of http://book.bionumbers.org/how-many-reactions-do-enzymes-carry-out-each-second/
   // substrate_concentration in mM, km in mM, kcat in reactions / sec
   static double rate(double substrate_concentration, double km, double kcat);
+
+private:
+  void parseHalfFormula(const std::vector<std::string>& tokens, size_t startidx, size_t endidx, MoleculeVals* mvals);
+  void parseFormula(const std::string& formula);
 };
 
 double probabilityPerSecond(double half_life_hours)
@@ -100,7 +106,7 @@ public:
   typedef std::shared_ptr<MoleculeType> Ptr;
   typedef std::shared_ptr<const MoleculeType> ConstPtr;
   
-  int idx_;
+  int idx_;  // probably this should be managed strictly in MoleculeTable.
   std::string name_;
   std::string symbol_;
   double daltons_;
