@@ -148,4 +148,3 @@ TEST_CASE("Ribosome")
   cout << cell->str() << endl;
   CHECK(cell->cytosol_contents_["ATP Synthase"] < 10);
 }
-
