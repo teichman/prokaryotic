@@ -64,6 +64,11 @@ public:
   bool hasMolecule(const std::string& name) const;
 };
 
+// See Fig 1 of http://book.bionumbers.org/how-many-reactions-do-enzymes-carry-out-each-second/
+// substrate_concentration in mM, km in mM, kcat in reactions / sec
+// Also https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics
+double rateMM(double substrate_concentration, double km, double kcat);
+
 class ReactionType : public Printable
 {
 public:
@@ -84,9 +89,6 @@ public:
                const MoleculeVals& kms, double kcat);
   void tick(Cell& cell, int num_protein_copies) const;
   std::string _str() const;
-  // See Fig 1 of http://book.bionumbers.org/how-many-reactions-do-enzymes-carry-out-each-second/
-  // substrate_concentration in mM, km in mM, kcat in reactions / sec
-  static double rate(double substrate_concentration, double km, double kcat);
 
 private:
   void parseHalfFormula(const std::vector<std::string>& tokens, size_t startidx, size_t endidx, MoleculeVals* mvals);

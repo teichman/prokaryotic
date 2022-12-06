@@ -120,7 +120,7 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
   double minrate = std::numeric_limits<double>::max();
   for (int i = 0; i < inputs_.vals_.size(); ++i)
     if (inputs_[i] > 0)
-      minrate = std::min(minrate, rate(concentrations[i], kms_[i], kcat_));
+      minrate = std::min(minrate, rateMM(concentrations[i], kms_[i], kcat_));
   double rate = minrate;  // reactions / tick (1 tick == 1 second?)
   
   // update cell.cytosol_counts_
@@ -147,9 +147,8 @@ std::string ReactionType::_str() const
   return oss.str();
 }
 
-double ReactionType::rate(double substrate_concentration, double km, double kcat)
+double rateMM(double substrate_concentration, double km, double kcat)
 {
-  // https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics
   return kcat * substrate_concentration / (km + substrate_concentration);
 }
 
@@ -504,7 +503,8 @@ void DNA::tick(Cell& cell)
   else
     normalized_transcription_factors.vals_ = transcription_factors_.vals_;
 
-  // Run protein synthesis reactions.
+  // Run protein synthesis reactions.  These are special reactions which consume only ATP and amino acids,
+  // and may take many ticks to complete.
   assert(transcription_factors_.vals_.size() == synthesis_reactions_.size());
   for (int i = 0; i < transcription_factors_.vals_.size(); ++i)
     if (synthesis_reactions_[i] && normalized_transcription_factors[i] > 0)

@@ -1,5 +1,8 @@
 
 MoleculeTable:
+  - name: Amino acids
+    symbol: brick
+    daltons: 100
   - name: ATP
     symbol: bang
     daltons: 507.18
