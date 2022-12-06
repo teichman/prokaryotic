@@ -44,10 +44,8 @@ ReactionTable:
       X: 1e-1
       ATP: 1e-3
 
-# Oof: Can't put quotes on things.  That makes parsing more annoying.
-# I guess we can search for strings in here, convert them to objects, etc., and "compile" an "expression" object once,
-# then execute that efficiently and repeatedly with every tick.
-# Eventually this shouldn't be YAML, just a DSL.
+# This is pretty janky but I guess will do for now.
+# Eventually this shouldn't be YAML, just a DSL that is compiled into C++ objects representing the expressions.
 DNA:
   - if: ATP Synthase < 300
     then:

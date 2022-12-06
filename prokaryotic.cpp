@@ -359,13 +359,22 @@ void Cell::tick(const Biome& biome)
   cytosol_contents_.probabilisticRound();
 }
 
-// std::string join(const std::vector<std::string>& tokens, size_t startidx, size_t endidx, char sep)
-// {
-//   fmt::format(
-// }
+DNAIf::DNAIf(const Prokaryotic& pro, const YAML::Node& yaml) :
+  pro_(pro)
+{
+  initializeFromString(yaml["if"].as<string>());
+  for (const YAML::Node& thenstr : yaml["then"]) {
+    thens_.push_back(DNAThen::Ptr(new DNAThen(pro_, thenstr.as<string>())));
+  }
+}
 
 DNAIf::DNAIf(const Prokaryotic& pro, const std::string& ifstr) :
   pro_(pro)
+{
+  initializeFromString(ifstr);
+}
+
+void DNAIf::initializeFromString(const std::string& ifstr)
 {
   vector<string> tokens = tokenizeSimple(ifstr);
   

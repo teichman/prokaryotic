@@ -233,30 +233,89 @@ TEST_CASE("DNAIf")
   //cell->cytosol_contents_["ATP Synthase"] = 0;
   cell->cytosol_contents_["Ribosome"] = 1000;
 
-  DNAIf cond(pro, "ATP Synthase < 300");
-  CHECK(cond.molecule_name_ == "ATP Synthase");
-  CHECK(cond.inequality_type_ == "<");
-  CHECK(cond.threshold_ == 300);
+  SUBCASE("Testing in isolation")
+  {
+    DNAIf dnaif(pro, "ATP Synthase < 300");
+    CHECK(dnaif.molecule_name_ == "ATP Synthase");
+    CHECK(dnaif.inequality_type_ == "<");
+    CHECK(dnaif.threshold_ == 300);
 
-  CHECK(cond.check(*cell));
-  cell->cytosol_contents_["ATP Synthase"] = 1000;
-  CHECK(!cond.check(*cell));
+    CHECK(dnaif.check(*cell));
+    cell->cytosol_contents_["ATP Synthase"] = 1000;
+    CHECK(!dnaif.check(*cell));
 
-  DNAThen dnathen(pro, "all = 0");
-  DNAThen dnathen2(pro, "ATP Synthase += 1.0");
+    DNAThen dnathen(pro, "all = 0");
+    DNAThen dnathen2(pro, "ATP Synthase += 1.0");
     
-  dnathen.apply(cell->dna_.get());
-  CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 0);
-  CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
-  CHECK(cell->dna_->transcription_factors_.vals_.sum() == 0);
-  dnathen2.apply(cell->dna_.get());
-  CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1.0);
-  CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
-  CHECK(cell->dna_->transcription_factors_.vals_.sum() == 1.0);
-  dnathen2.apply(cell->dna_.get());
-  CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 2.0);
-  CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
-  CHECK(cell->dna_->transcription_factors_.vals_.sum() == 2.0);
+    dnathen.apply(cell->dna_.get());
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 0);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 0);
+    dnathen2.apply(cell->dna_.get());
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1.0);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 1.0);
+    dnathen2.apply(cell->dna_.get());
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 2.0);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 2.0);
+  }
+  
+  SUBCASE("Nested")
+  {
+    DNAIf dnaif(pro, "ATP Synthase < 300");
+
+    CHECK(dnaif.check(*cell));
+    cell->cytosol_contents_["ATP Synthase"] = 1000;
+    CHECK(!dnaif.check(*cell));
+
+    DNAThen::Ptr dnathen(new DNAThen(pro, "all = 0"));
+    DNAThen::Ptr dnathen2(new DNAThen(pro, "ATP Synthase += 1.0"));
+
+    dnaif.thens_.push_back(dnathen);
+    dnaif.execute(cell.get());
+    
+    // Transcription factors should be unchanged because ATP Synthase is high enough.
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 1);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == cell->dna_->transcription_factors_.vals_.size());
+
+    // Now it drops too low, but we only have the first `dnathen` attached to `dnaif`.
+    cell->cytosol_contents_["ATP Synthase"] = 200;
+    dnaif.execute(cell.get());
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 0);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 0);
+
+    // Now add the second DNAThen.
+    dnaif.thens_.push_back(dnathen2);
+    dnaif.execute(cell.get());
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1.0);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 1.0);
+  }
+
+  SUBCASE("YAML construction")
+  {
+    DNAIf dnaif(pro, YAML::Load("if: ATP Synthase < 300\n"
+                                "then:\n"
+                                "  - all = 0\n"
+                                "  - ATP Synthase += 1.0"));
+    
+    // Transcription factors should be unchanged because ATP Synthase is high enough.
+    cell->cytosol_contents_["ATP Synthase"] = 1000;
+    dnaif.execute(cell.get());
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 1);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == cell->dna_->transcription_factors_.vals_.size());
+
+    // Now transcription factors should change.
+    cell->cytosol_contents_["ATP Synthase"] = 200;
+    dnaif.execute(cell.get());
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1.0);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 1.0);
+  }
 }
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.

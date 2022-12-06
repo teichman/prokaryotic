@@ -135,8 +135,6 @@ public:
   const Prokaryotic& pro_;
   double m3_;
   MoleculeVals concentrations_;  // mM
-  // MoleculeVals fluxes_;
-  // MoleculeVals contents_;
   std::string name_;
   
   Biome(const Prokaryotic& pro, double m3, const std::string& name);
@@ -178,6 +176,8 @@ public:
   std::vector<DNAThen::Ptr> thens_;
   
   DNAIf(const Prokaryotic& pro, const std::string& ifstr);
+  DNAIf(const Prokaryotic& pro, const YAML::Node& yaml);
+  void initializeFromString(const std::string& ifstr);
 
   void execute(Cell* cell) const;
   bool check(const Cell& cell) const;
@@ -201,6 +201,7 @@ public:
   // If the sum is greater than 1, the distribution will be normalized.
   MoleculeVals transcription_factors_;
   std::vector<ReactionType::ConstPtr> synthesis_reactions_;
+  std::vector<DNAIf::ConstPtr> dna_ifs_;
   
   DNA(const Prokaryotic& pro);
   void tick(Cell& cell);
