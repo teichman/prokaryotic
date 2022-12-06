@@ -2,31 +2,13 @@
 #include <yaml-cpp/yaml.h>
 #include <yaml-cpp/node/emit.h>
 
-
 using namespace std;
 
 int main(int argc, char** argv)
 {
-  // For defining yaml directly in the cpp code, I guess this will do.
-  string mlsl =
-    "This is a \n"
-    "multiline\n"
-    "string literal.";
-  cout << mlsl << endl;
-
-  // This lets one remove the \ns, but ofc you can't indent it properly or you get extra spaces in the raw string.
-  string mlsl2 = R"(This is the first line.
-This is the second line.
-This is the third line.)";
-
-  cout << mlsl2 << endl;
-  
-  cout << "Hi" << endl;
-
   YAML::Node config = YAML::LoadFile(argv[1]);
   cout << "Entire file: " << endl;
   cout << YAML::Dump(config) << endl;
-
 
   const YAML::Node& dna = config["DNA"];
   for (const YAML::Node& cond : dna) {
@@ -35,16 +17,9 @@ This is the third line.)";
       cout << "  result: " << result.as<string>() << endl;
     }
   }
-    
-  // for (YAML::const_iterator it = dna.begin(); it != dna.end(); ++it) {
-  //   cout << "IsMap: " << it->IsMap() << endl;
-  //   cout << "whole thing: " << *it << endl;
-  //   cout << "first: " << it->first.as<string>() << endl;
-  //   cout << "second: " << it->second << endl;
-  // }
-  
-  return 0;
 
+
+  
   cout << "------------------------------------------------------------" << endl;
   cout << endl;
   cout << config["ReactionTable"] << endl;
@@ -62,20 +37,6 @@ This is the third line.)";
       cout << "    " << key << " " << value << endl;
     }
   }
-  
-  // YAML::Node config = YAML::Load("username: aoeu\nmouse: snth");
-  
-  // //YAML::Node config = YAML::LoadFile("config.yaml");
-  // if (config["username"])
-  //   cout << "username: " << config["username"].as<std::string>() << endl;
-  // if (config["mouse"])
-  //   cout << "mouse: " << config["mouse"].as<std::string>() << endl;
-
-  // // const std::string username = config["username"].as<std::string>();
-  // // const std::string password = config["password"].as<std::string>();
-
-  // // std::ofstream fout("config.yaml");
-  // // fout << config;
   
   return 0;
 }

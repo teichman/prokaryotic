@@ -220,7 +220,43 @@ TEST_CASE("YAML")
     CHECK(rt.kms_["ATP"] == 1e-3);
     CHECK(rt.kms_.vals_.sum() == rt.kms_["X"] + rt.kms_["ATP"]);
   }
+}
+
+TEST_CASE("DNAIf")
+{
+  Prokaryotic pro;
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", "", 1)));
   
+  Cell::Ptr cell(new Cell(pro, "cell"));
+  pro.cells_.push_back(cell);
+  //cell->cytosol_contents_["ATP Synthase"] = 0;
+  cell->cytosol_contents_["Ribosome"] = 1000;
+
+  DNAIf cond(pro, "ATP Synthase < 300");
+  CHECK(cond.molecule_name_ == "ATP Synthase");
+  CHECK(cond.inequality_type_ == "<");
+  CHECK(cond.threshold_ == 300);
+
+  CHECK(cond.check(*cell));
+  cell->cytosol_contents_["ATP Synthase"] = 1000;
+  CHECK(!cond.check(*cell));
+
+  DNAThen dnathen(pro, "all = 0");
+  DNAThen dnathen2(pro, "ATP Synthase += 1.0");
+    
+  dnathen.apply(cell->dna_.get());
+  CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 0);
+  CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+  CHECK(cell->dna_->transcription_factors_.vals_.sum() == 0);
+  dnathen2.apply(cell->dna_.get());
+  CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1.0);
+  CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+  CHECK(cell->dna_->transcription_factors_.vals_.sum() == 1.0);
+  dnathen2.apply(cell->dna_.get());
+  CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 2.0);
+  CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+  CHECK(cell->dna_->transcription_factors_.vals_.sum() == 2.0);
 }
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.

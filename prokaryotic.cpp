@@ -1,3 +1,4 @@
+#include <fmt/ranges.h>
 #include <fmt/core.h>
 #include <prokaryotic.h>
 #include <chrono>
@@ -23,7 +24,7 @@ void PASSERT(bool flag, const std::string& msg)
 }
 
 
-vector<string> tokenize_simple(const std::string& s)
+vector<string> tokenizeSimple(const std::string& s)
 {
   vector<string> tokens;
   std::stringstream ss(s);
@@ -59,7 +60,7 @@ void ReactionType::parseHalfFormula(const std::vector<std::string>& tokens, size
 
 void ReactionType::parseFormula(const std::string& formula)
 {
-  vector<string> tokens = tokenize_simple(formula);
+  vector<string> tokens = tokenizeSimple(formula);
   int sep = -1;
   for (size_t i = 0; i < tokens.size(); ++i) {
     if (tokens[i] == "->") {
@@ -358,12 +359,105 @@ void Cell::tick(const Biome& biome)
   cytosol_contents_.probabilisticRound();
 }
 
+// std::string join(const std::vector<std::string>& tokens, size_t startidx, size_t endidx, char sep)
+// {
+//   fmt::format(
+// }
+
+DNAIf::DNAIf(const Prokaryotic& pro, const std::string& ifstr) :
+  pro_(pro)
+{
+  vector<string> tokens = tokenizeSimple(ifstr);
+  
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (tokens[i] == ">" || tokens[i] == "<") {
+      molecule_name_ = fmt::format("{}", fmt::join(tokens.begin(), tokens.begin() + i, " "));
+      molecule_idx_ = pro_.moleculeIdx(molecule_name_);
+      inequality_type_ = tokens[i];
+      assert(tokens.size() == i + 2);
+      threshold_ = atof(tokens[i+1].c_str());
+      break;
+    }
+  }  
+}
+
+void DNAIf::execute(Cell* cell) const
+{
+  if (!check(*cell))
+    return;
+  for (auto then : thens_)
+    then->apply(cell->dna_.get());
+  for (auto subif : subifs_)
+    subif->execute(cell);
+}
+
+bool DNAIf::check(const Cell& cell) const
+{
+  MoleculeVals contents(pro_);
+  contents.vals_ = cell.cytosol_contents_.vals_ + cell.membrane_contents_.vals_;
+  
+  if (inequality_type_ == "<")
+    if (contents[molecule_idx_] < threshold_)
+      return true;
+  
+  if (inequality_type_ == ">")
+    if (contents[molecule_idx_] > threshold_)
+      return true;
+  
+  return false;
+}
+
+DNAThen::DNAThen(const Prokaryotic& pro, const std::string& thenstr) :
+  pro_(pro)
+{
+  vector<string> tokens = tokenizeSimple(thenstr);
+  
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (tokens[i] == "=" || tokens[i] == "+=" || tokens[i] == "-=") {
+      molecule_name_ = fmt::format("{}", fmt::join(tokens.begin(), tokens.begin() + i, " "));
+      if (molecule_name_ == "all")
+        molecule_idx_ = -1;
+      else
+        molecule_idx_ = pro_.moleculeIdx(molecule_name_);
+      
+      operation_type_ = tokens[i];
+      assert(operation_type_ == "=" || operation_type_ == "+=" || operation_type_ == "-=");
+      assert(tokens.size() == i + 2);
+      value_ = atof(tokens[i+1].c_str());
+      break;
+    }
+  }  
+}
+
+void DNAThen::apply(DNA* dna) const
+{
+  if (molecule_idx_ >= 0) {
+    if (operation_type_ == "=")
+      dna->transcription_factors_[molecule_idx_] = value_;
+    else if (operation_type_ == "+=")
+      dna->transcription_factors_[molecule_idx_] += value_;
+    else if (operation_type_ == "-=")
+      dna->transcription_factors_[molecule_idx_] -= value_;
+  }
+  else {
+    assert(molecule_name_ == "all");
+    if (operation_type_ == "=")
+      dna->transcription_factors_.vals_ = value_;
+    else if (operation_type_ == "+=")
+      dna->transcription_factors_.vals_ += value_;
+    else if (operation_type_ == "-=")
+      dna->transcription_factors_.vals_ -= value_;
+    return;
+  }
+}
+
+
 DNA::DNA(const Prokaryotic& pro) :
   pro_(pro),
   transcription_factors_(pro),
   synthesis_reactions_(transcription_factors_.vals_.size(), ReactionType::ConstPtr(nullptr))
 {
-  
+  transcription_factors_.vals_.setOnes();
 }
 
 void DNA::tick(Cell& cell)

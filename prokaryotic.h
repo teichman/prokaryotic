@@ -144,6 +144,45 @@ public:
   void tick();
 };
 
+class DNA;
+
+class DNAThen
+{
+public:
+  typedef std::shared_ptr<DNAThen> Ptr;
+  typedef std::shared_ptr<const DNAThen> ConstPtr;
+  
+  const Prokaryotic& pro_;
+  std::string molecule_name_;
+  int molecule_idx_;
+  std::string operation_type_;
+  double value_;
+  
+  DNAThen(const Prokaryotic& pro, const std::string& thenstr);
+  void apply(DNA* dna) const;
+};
+
+class DNAIf
+{
+public:
+  typedef std::shared_ptr<DNAIf> Ptr;
+  typedef std::shared_ptr<const DNAIf> ConstPtr;
+
+  const Prokaryotic& pro_;
+  std::string molecule_name_;
+  int molecule_idx_;
+  std::string inequality_type_;
+  double threshold_;
+  
+  std::vector<DNAIf::Ptr> subifs_;
+  std::vector<DNAThen::Ptr> thens_;
+  
+  DNAIf(const Prokaryotic& pro, const std::string& ifstr);
+
+  void execute(Cell* cell) const;
+  bool check(const Cell& cell) const;
+};
+
 
 // Contains the high level scripts for the cell.
 // e.g. high level functions like divide() are here.
