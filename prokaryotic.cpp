@@ -1,3 +1,4 @@
+#include <random>
 #include <fmt/ranges.h>
 #include <fmt/core.h>
 #include <prokaryotic.h>
@@ -115,6 +116,8 @@ ReactionType::ReactionType(const Prokaryotic& pro,
 
 void ReactionType::tick(Cell& cell, int num_protein_copies) const
 {
+  assert(num_protein_copies > 0);
+  
   // Simplify: Assume that everything follows Michaelis-Menten kinetics, even for the (presumably majority) of reactions
   // that have multiple substrates.
   // We'll just take the min reaction rate across the substrates (inputs).
@@ -125,8 +128,11 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
     if (inputs_[i] > 0)
       minrate = std::min(minrate, rateMM(concentrations[i], kms_[i], kcat_));
   double rate = minrate;  // reactions / tick (1 tick == 1 second?)
+  assert(rate >= 0);
   
   // update cell.cytosol_counts_
+  assert((inputs_.vals_ >= 0.0).all());
+  assert((outputs_.vals_ >= 0.0).all());
   cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
   cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
 
@@ -184,6 +190,9 @@ ReactionType::ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protei
 
 double rateMM(double substrate_concentration, double km, double kcat)
 {
+  assert(substrate_concentration >= 0);
+  assert(km > 0);
+  assert(kcat > 0);
   return kcat * substrate_concentration / (km + substrate_concentration);
 }
 
@@ -341,6 +350,7 @@ MoleculeVals Cell::cytosolConcentrations(const Prokaryotic& pro, MoleculeVals cy
   
   MoleculeVals concentrations(pro);
   concentrations.vals_ = cytosol_contents.vals_ * (1.67e-6 / um3);
+  assert((concentrations.vals_ >= 0.0).all());
   return concentrations;
 }
 
@@ -557,27 +567,43 @@ void DNA::tick(Cell& cell)
   // Assign free ribosomes.
   assert(ntfs.vals_.size() == synthesis_reactions_.size());
   int num_free_ribosomes = cell.cytosol_contents_["Ribosome"] - ribosome_assignments_.vals_.sum();
+  assert(num_free_ribosomes >= 0);
   for (int i = 0; i < ntfs.vals_.size(); ++i) {
     if (ntfs.vals_[i] > 0) {
       assert(pro_.molecule(i)->num_amino_acids_ > 0);
       ribosome_assignments_.vals_[i] += floor(ntfs.vals_[i] * num_free_ribosomes);
     }
   }
+  assert((ribosome_assignments_.vals_ >= 0).all());
+
+  // Get random ordering to use for the synthesis reactions.
+  static vector<int> random_indices;
+  static std::random_device rd;
+  static std::mt19937 g(rd());
+  if (random_indices.empty())
+    for (size_t i = 0; i < synthesis_reactions_.size(); ++i)
+      random_indices.push_back(i);
+  std::shuffle(random_indices.begin(), random_indices.end(), g);
   
   // Run protein synthesis reactions.  These are special reactions which consume only ATP and amino acids, and produce only proteins.
   cell.cytosol_contents_.probabilisticRound();
   MoleculeVals orig_cytosol_contents = cell.cytosol_contents_;
-  for (int i = 0; i < synthesis_reactions_.size(); ++i)
-    if (synthesis_reactions_[i] && ntfs[i] > 0)
-      synthesis_reactions_[i]->tick(cell, ribosome_assignments_.vals_[i]);
-
-  // Collapse probability distributions over new proteins.
+  for (int idx : random_indices) {
+    if (synthesis_reactions_[idx] && ntfs[idx] > 0)
+      synthesis_reactions_[idx]->tick(cell, ribosome_assignments_.vals_[idx]);
+  }
+ 
+  cout << "[DNA::tick] cytosol contents before pround: " << endl << cell.cytosol_contents_.str("    ") << endl;
+  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i)
+    assert(cell.cytosol_contents_.vals_[i] >= -1e-6);
+  
+  // Collapse probability distributions over new proteins.  
   cell.cytosol_contents_.probabilisticRound();
   for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i)
     assert(fabs(cell.cytosol_contents_.vals_[i] - int(cell.cytosol_contents_.vals_[i])) < 1e-6);
   
   // If we produced any proteins, free up the corresponding ribosomes.  
-  ArrayXd new_molecules = orig_cytosol_contents.vals_ - cell.cytosol_contents_.vals_;
+  ArrayXd new_molecules = cell.cytosol_contents_.vals_ - orig_cytosol_contents.vals_;
   for (int i = 0; i < new_molecules.size(); ++i) {
     if (new_molecules[i] > 0) {
       // New molecules should always be proteins, ADP, or Phosphate
@@ -589,10 +615,15 @@ void DNA::tick(Cell& cell)
         // Num new proteins should always be approx an int.
         assert(fabs(new_molecules[i] - int(new_molecules[i])) < 1e-6);
         // Free up the ribosomes corresponding to the new proteins.
-        ribosome_assignments_.vals_[i] -= new_molecules[i];
+        // Very small proteins can be generated at a rate more than 1 protein per tick.
+        // In this case, the num proteins generated will be greater than the number of ribosomes assigned.
+        // So, free up the minimum of num ribosomes assigned & num proteins created.
+        ribosome_assignments_.vals_[i] -= std::min(ribosome_assignments_.vals_[i], new_molecules[i]);
       }
     }
   }
+
+  assert((ribosome_assignments_.vals_ >= 0).all());
 }
 
 Prokaryotic::Prokaryotic()

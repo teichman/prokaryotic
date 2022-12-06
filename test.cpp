@@ -2,7 +2,7 @@
 #include <doctest.h>
 #include <prokaryotic.h>
 
-using std::cout, std::endl;
+using namespace std;
 using Eigen::ArrayXd, Eigen::VectorXd;
 
 TEST_CASE("Cytosol concentrations / contents round trip") {
@@ -235,6 +235,7 @@ TEST_CASE("DNAIf")
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 1, 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", "", 1, 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", ":briefcase:", 423.17)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Amino acids", "", 100)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: ATP\n"
                                                                          "symbol: bang\n"
                                                                          "daltons: 507.18"))));
@@ -356,6 +357,58 @@ TEST_CASE("DNAIf")
     CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
     CHECK(cell->dna_->transcription_factors_.vals_.sum() == 1.0);
   }
+}
+
+TEST_CASE("Protein synthesis")
+{
+  Prokaryotic pro;
+  
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein X", "", 0, 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein 2X", "", 0, 2)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Amino acids", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 0, 150000)));  // Really big so they don't really get produced
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 0)));
+
+  // Provide infinite AAs and ATP.
+  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+  pro.biomes_.push_back(biome);
+  biome->concentrations_["Amino acids"] = 200;
+  biome->concentrations_["ATP"] = 200;
+
+  Cell::Ptr cell(new Cell(pro, "cell"));
+  pro.cells_.push_back(cell);
+  // AAs and ATP come in through the membrane very fast.  ADP leaves very fast.
+  cell->membrane_permeabilities_["Amino acids"] = 1.0;  
+  cell->membrane_permeabilities_["ATP"] = 1.0;
+  cell->membrane_permeabilities_["ADP"] = 1.0;
+
+  // Start off with some ribosomes
+  cell->cytosol_contents_["Ribosome"] = 3e4;  // should get 10k each to ribosomes, X, and 2X.
+
+  
+  for (int i = 0; i < 100; ++i) {
+    pro.tick();
+    cout << "------" << endl;
+    cout << cell->str() << endl;
+    cout << "concentrations: " << endl << cell->cytosolConcentrations().str("  ") << endl;
+    //cin.ignore();
+  }
+
+  // With equal transcription factors (the default), confirm that 2*num_amino_acids_ means 1/2 the production rate.
+  // Allow 5% error.
+  CHECK(2*cell->cytosol_contents_["Protein 2X"] / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
+  
+  
+  // cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Protein X < 10000\n"
+  //                                                                     "then:\n"
+  //                                                                     "  - Protein X = 1.0"))));
+  // cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: ATP Synthase < 300\n"
+  //                                                                     "then:\n"
+  //                                                                     "  - ATP Synthase = 10.0"))));
+
+  
 }
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.
