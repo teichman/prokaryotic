@@ -79,6 +79,9 @@ ReactionType::ReactionType(const Prokaryotic& pro, const YAML::Node& yaml) :
 {
   string formula = yaml["formula"].as<string>();
 
+  // Eventually: a ReactionType will not have an associated protein_idx_, instead there will be a matrix
+  // of factors that gets applied, and the catalyzing protein will have the dominating effect.
+  // But this will do for now.
   if (yaml["protein"]) {
     protein_name_ = yaml["protein"].as<string>();
     protein_idx_ = pro_.moleculeIdx(protein_name_);
@@ -147,6 +150,38 @@ std::string ReactionType::_str() const
   return oss.str();
 }
 
+ReactionType::ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protein_to_synthesize) :
+  pro_(pro),
+  inputs_(pro),
+  outputs_(pro),
+  kms_(pro)
+{
+  protein_name_ = "Ribosome";
+  protein_idx_ = pro_.moleculeIdx(protein_name_);
+  
+  // https://bionumbers.hms.harvard.edu/bionumber.aspx?s=n&v=0&id=107782
+  // ~5 ATP per amino acid added to a protein.
+  inputs_["ATP"] = 5;
+  inputs_["Amino acids"] = 1;
+  // We're trying out a probabilistic average synthesis model here.
+  outputs_[protein_to_synthesize->name_] = 1.0 / protein_to_synthesize->num_amino_acids_;
+  outputs_["ADP"] = 5;
+  outputs_["Phosphate"] = 5;
+
+  // I think for now we are just leaving these at some fixed reasonable number?
+  // We're aiming for 20 AAs / second.  https://micro.magnet.fsu.edu/cells/ribosomes/ribosomes.html
+  // Normal cellular ATP is 1-10 mM.  (ADP is typically 1000x lower.)
+  kms_["ATP"] = 0.5;  // Probably for typical cells with 1-10 mM ATP, the ATP concentration is not the limiting factor.
+  // http://book.bionumbers.org/what-are-the-concentrations-of-free-metabolites-in-cells/
+  // glutamate 96 mM
+  // aspartate 4.2 mM, valine 4.0, glutamine 3.8, alanine 2.5, arginine 0.57, asparagine 0.51, lysine 0.4, proline 0.38, methionine 0.14, ...
+  // Ok so total AA concentration is maybe like 110 mM.  This is e. coli.
+  // https://bionumbers.hms.harvard.edu/bionumber.aspx?s=n&v=2&id=107764
+  // Hm this says 150 mM in yeast.  Ok, good enough.  We'll set KM at around half of e. coli I guess.
+  kms_["Amino acids"] = 60;
+  kcat_ = 20;
+}
+
 double rateMM(double substrate_concentration, double km, double kcat)
 {
   return kcat * substrate_concentration / (km + substrate_concentration);
@@ -156,7 +191,7 @@ MoleculeType::MoleculeType(const Prokaryotic& pro,
                            const std::string& name,
                            const std::string& symbol,
                            double daltons,
-                           double half_life_hours, double num_amino_acids) :
+                           double num_amino_acids, double half_life_hours) :
   idx_(pro.numMoleculeTypes()),
   name_(name),
   symbol_(symbol),
@@ -463,19 +498,33 @@ void DNAThen::apply(DNA* dna) const
 DNA::DNA(const Prokaryotic& pro) :
   pro_(pro),
   transcription_factors_(pro),
+  ribosome_assignments_(pro),
   synthesis_reactions_(transcription_factors_.vals_.size(), ReactionType::ConstPtr(nullptr))
 {
-  transcription_factors_.vals_.setOnes();
+  setDefaultTranscriptionFactors();
+
+  for (size_t i = 0; i < synthesis_reactions_.size(); ++i)
+    if (pro_.molecule(i)->num_amino_acids_ > 0)
+      synthesis_reactions_[i] = ReactionType::ConstPtr(new ReactionType(pro, pro_.molecule(i)));
+}
+
+void DNA::setDefaultTranscriptionFactors()
+{
+  transcription_factors_.vals_.setZero();
+  for (int i = 0; i < transcription_factors_.vals_.size(); ++i)
+    if (pro_.molecule(i)->num_amino_acids_ > 0)
+      transcription_factors_.vals_[i] = 1;
 }
 
 void DNA::tick(Cell& cell)
 {
   // In testing, sometimes we don't have ribosomes.
+  // Eventually: get rid of this.
   if (!cell.cytosol_contents_.hasMolecule("Ribosome"))
     return;
-  
-  transcription_factors_.vals_.setOnes();
 
+  // Every tick, transcription factors are set to their defaults, then user code is executed to make changes.
+  setDefaultTranscriptionFactors();
   for (auto dnaif : dna_ifs_) {
     dnaif->execute(&cell);
   }
@@ -495,20 +544,55 @@ void DNA::tick(Cell& cell)
   //   transcription_factors_["ATP Synthase"] = 1.0;
   // }
 
-  // If the transcription factors sum to greater than one, make them sum to one.
-  // Otherwise leave them alone.
-  MoleculeVals normalized_transcription_factors(pro_);
-  if (transcription_factors_.vals_.sum() > 1.0)
-    normalized_transcription_factors.vals_ = transcription_factors_.vals_ / transcription_factors_.vals_.sum();
-  else
-    normalized_transcription_factors.vals_ = transcription_factors_.vals_;
+  // Transcription factor normalization:
+  //   * If there are negative numbers, replace them with zeros.
+  //   * If the transcription factors sum to greater than one, make them sum to one.
+  //   * Otherwise leave them alone.
+  
+  MoleculeVals ntfs(pro_);  // normalized transcription factors
+  ntfs.vals_ = transcription_factors_.vals_.max(ArrayXd::Zero(transcription_factors_.vals_.size()));
+  if (ntfs.vals_.sum() > 1.0)
+    ntfs.vals_ /= ntfs.vals_.sum();
 
-  // Run protein synthesis reactions.  These are special reactions which consume only ATP and amino acids,
-  // and may take many ticks to complete.
-  assert(transcription_factors_.vals_.size() == synthesis_reactions_.size());
-  for (int i = 0; i < transcription_factors_.vals_.size(); ++i)
-    if (synthesis_reactions_[i] && normalized_transcription_factors[i] > 0)
-      synthesis_reactions_[i]->tick(cell, cell.cytosol_contents_["Ribosome"] * normalized_transcription_factors[i]);
+  // Assign free ribosomes.
+  assert(ntfs.vals_.size() == synthesis_reactions_.size());
+  int num_free_ribosomes = cell.cytosol_contents_["Ribosome"] - ribosome_assignments_.vals_.sum();
+  for (int i = 0; i < ntfs.vals_.size(); ++i) {
+    if (ntfs.vals_[i] > 0) {
+      assert(pro_.molecule(i)->num_amino_acids_ > 0);
+      ribosome_assignments_.vals_[i] += floor(ntfs.vals_[i] * num_free_ribosomes);
+    }
+  }
+  
+  // Run protein synthesis reactions.  These are special reactions which consume only ATP and amino acids, and produce only proteins.
+  cell.cytosol_contents_.probabilisticRound();
+  MoleculeVals orig_cytosol_contents = cell.cytosol_contents_;
+  for (int i = 0; i < synthesis_reactions_.size(); ++i)
+    if (synthesis_reactions_[i] && ntfs[i] > 0)
+      synthesis_reactions_[i]->tick(cell, ribosome_assignments_.vals_[i]);
+
+  // Collapse probability distributions over new proteins.
+  cell.cytosol_contents_.probabilisticRound();
+  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i)
+    assert(fabs(cell.cytosol_contents_.vals_[i] - int(cell.cytosol_contents_.vals_[i])) < 1e-6);
+  
+  // If we produced any proteins, free up the corresponding ribosomes.  
+  ArrayXd new_molecules = orig_cytosol_contents.vals_ - cell.cytosol_contents_.vals_;
+  for (int i = 0; i < new_molecules.size(); ++i) {
+    if (new_molecules[i] > 0) {
+      // New molecules should always be proteins, ADP, or Phosphate
+      MoleculeType::ConstPtr nmt = pro_.molecule(i);
+      assert(nmt->num_amino_acids_ > 0 || nmt->name_ == "ADP" || nmt->name_ == "Phosphate");
+      
+      // Just for the proteins:
+      if (nmt->num_amino_acids_ > 0) {
+        // Num new proteins should always be approx an int.
+        assert(fabs(new_molecules[i] - int(new_molecules[i])) < 1e-6);
+        // Free up the ribosomes corresponding to the new proteins.
+        ribosome_assignments_.vals_[i] -= new_molecules[i];
+      }
+    }
+  }
 }
 
 Prokaryotic::Prokaryotic()

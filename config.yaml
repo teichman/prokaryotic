@@ -30,7 +30,7 @@ MoleculeTable:
   - name: Ribosome
     symbol: factory
     daltons: 2.7e6
-    num-amino-acids: 2.7e4
+    num-amino-acids: 7459
     
 
 ReactionTable:
@@ -47,8 +47,16 @@ ReactionTable:
       X: 1e-1
       ATP: 1e-3
 
+
+BiomeTable:
+  - name: Alkaline Vents
+    concentrations:
+      Amino acids: 100  # Above the ribosomal KM for AAs.
+      Phosphate: 1
+      
 # This is pretty janky but I guess will do for now.
-# Eventually this shouldn't be YAML, just a DSL that is compiled into C++ objects representing the expressions.
+# Eventually this shouldn't be YAML, just a small DSL that is compiled into C++ objects representing the expressions.
+# if, else, =, +=, <, >.
 DNA:
   - if: ATP Synthase < 300
     then:
@@ -57,3 +65,18 @@ DNA:
     then:
       - all = 0.0
       - ATP Synthase = 1.0
+  - if: Ribosome > 30000
+    then:
+      - Ribosome = 0.0
+  - if: Ribosome < 30000
+    then:
+      - Ribosome = 1.0
+  - if: Ribosome < 20000
+    then:
+      - Ribosome = 2.0
+  - if: Ribosome < 10000
+    then:
+      - Ribosome = 3.0
+  # - if: Ribosomes > 7e4
+  #   then:
+  #     - divide()

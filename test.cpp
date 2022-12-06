@@ -92,8 +92,18 @@ TEST_CASE("Ribosome")
 {
   Prokaryotic pro;
   double half_life_hours = 0.5;
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", ":hammer:", 5e5, half_life_hours)));
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", ":factory:", 2e6)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: ATP\n"
+                                                                         "symbol: bang\n"
+                                                                         "daltons: 507.18"))));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: Amino acids\n"
+                                                                         "symbol: bricks\n"
+                                                                         "daltons: 100"))));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: Phosphate\n"
+                                                                         "symbol: P\n"
+                                                                         "daltons: 94.97"))));
+  
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", ":hammer:", 5e5, 1, half_life_hours)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", ":factory:", 2e6, 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", ":briefcase:", 423.17)));
   
   Cell::Ptr cell(new Cell(pro, "cell"));
@@ -133,9 +143,6 @@ TEST_CASE("Ribosome")
   CHECK(cell->cytosol_contents_["ATP Synthase"] == 0);
 
   // Now add the building blocks.  We should get some ATP Synthase.
-  // Ofc this depends on the "DNA programming" the user will do, and right now that's hardcoded,
-  // and changing that will break this test.  That's ok.
-  // We're not setting any DNA programming rules, so the default is just to make them all equally.
   cout << "----------------------------------------" << endl;
   cout << "Added building blocks to make ATP Synthase out of. " << endl;
   cell->cytosol_contents_["ADP"] = 300;
@@ -170,8 +177,8 @@ TEST_CASE("YAML")
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "X", "", 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "R", "", 1)));
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", "", 1)));
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Consumer", "", 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", "", 1, 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Consumer", "", 1, 1)));
 
   { 
     YAML::Node yaml = YAML::Load("formula: ADP + Phosphate -> ATP\n"
@@ -225,8 +232,18 @@ TEST_CASE("YAML")
 TEST_CASE("DNAIf")
 {
   Prokaryotic pro;
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 1)));
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", "", 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 1, 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", "", 1, 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", ":briefcase:", 423.17)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: ATP\n"
+                                                                         "symbol: bang\n"
+                                                                         "daltons: 507.18"))));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: Amino acids\n"
+                                                                         "symbol: bricks\n"
+                                                                         "daltons: 100"))));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: Phosphate\n"
+                                                                         "symbol: P\n"
+                                                                         "daltons: 94.97"))));
   
   Cell::Ptr cell(new Cell(pro, "cell"));
   pro.cells_.push_back(cell);
@@ -278,7 +295,7 @@ TEST_CASE("DNAIf")
     // Transcription factors should be unchanged because ATP Synthase is high enough.
     CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1);
     CHECK(cell->dna_->transcription_factors_["Ribosome"] == 1);
-    CHECK(cell->dna_->transcription_factors_.vals_.sum() == cell->dna_->transcription_factors_.vals_.size());
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 2);
 
     // Now it drops too low, but we only have the first `dnathen` attached to `dnaif`.
     cell->cytosol_contents_["ATP Synthase"] = 200;
@@ -307,7 +324,7 @@ TEST_CASE("DNAIf")
     dnaif.execute(cell.get());
     CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1);
     CHECK(cell->dna_->transcription_factors_["Ribosome"] == 1);
-    CHECK(cell->dna_->transcription_factors_.vals_.sum() == cell->dna_->transcription_factors_.vals_.size());
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 2);
 
     // Now transcription factors should change.
     cell->cytosol_contents_["ATP Synthase"] = 200;
@@ -343,6 +360,18 @@ TEST_CASE("DNAIf")
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.
 // bc of the biome <> cell permeability math.
-TEST_CASE("Static cell")
-{
-}
+// TEST_CASE("Static cell")
+// {
+// }
+
+// https://www.sciencedirect.com/topics/neuroscience/adenosine-triphosphate
+// Normally cellular ATP concentration is maintained in the range of 1 to 10 mmol/L, with a normal ratio of ATP/ADP of approximately 1000.
+// TEST_CASE()
+// {
+// }
+
+// https://www.sciencedirect.com/topics/neuroscience/adenosine-triphosphate
+// Normal cellular ATP is 1-10 mM.  (ADP is typically 1000x lower.)
+// TEST_CASE()
+// {
+// }

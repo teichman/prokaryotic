@@ -69,32 +69,6 @@ public:
 // Also https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics
 double rateMM(double substrate_concentration, double km, double kcat);
 
-class ReactionType : public Printable
-{
-public:
-  typedef std::shared_ptr<const ReactionType> ConstPtr;
-  typedef std::shared_ptr<ReactionType> Ptr;
-
-  const Prokaryotic& pro_;
-  MoleculeVals inputs_;
-  MoleculeVals outputs_;
-  MoleculeVals kms_;  // concentrations that yield half the max rate.  Each element is mM.
-  double kcat_;  // max rate per tick (1 tick is 1 second?)
-  std::string protein_name_;
-  size_t protein_idx_;
-
-  ReactionType(const Prokaryotic& pro, const YAML::Node& yaml);
-  ReactionType(const Prokaryotic& pro,
-               const MoleculeVals& inputs, const MoleculeVals& outputs,
-               const MoleculeVals& kms, double kcat);
-  void tick(Cell& cell, int num_protein_copies) const;
-  std::string _str() const;
-
-private:
-  void parseHalfFormula(const std::vector<std::string>& tokens, size_t startidx, size_t endidx, MoleculeVals* mvals);
-  void parseFormula(const std::string& formula);
-};
-
 double probabilityPerSecond(double half_life_hours)
 {
   if (half_life_hours == std::numeric_limits<double>::max())
@@ -120,12 +94,41 @@ public:
 
   MoleculeType(const Prokaryotic& pro, const std::string& name, const std::string& symbol,
                double daltons,
-               double half_life_hours = std::numeric_limits<double>::max(),
-               double num_amino_acids = 0);
+               double num_amino_acids = 0,
+               double half_life_hours = std::numeric_limits<double>::max());
   MoleculeType(const Prokaryotic& pro, const YAML::Node& yaml);
   
   std::string _str() const;
   double pDenature() const { return probabilityPerSecond(half_life_hours_); }
+};
+
+class ReactionType : public Printable
+{
+public:
+  typedef std::shared_ptr<const ReactionType> ConstPtr;
+  typedef std::shared_ptr<ReactionType> Ptr;
+
+  const Prokaryotic& pro_;
+  MoleculeVals inputs_;
+  MoleculeVals outputs_;
+  MoleculeVals kms_;  // concentrations that yield half the max rate.  Each element is mM.
+  double kcat_;  // max rate per tick (1 tick is 1 second?)
+  std::string protein_name_;
+  size_t protein_idx_;
+
+  ReactionType(const Prokaryotic& pro, const YAML::Node& yaml);
+  ReactionType(const Prokaryotic& pro,
+               const MoleculeVals& inputs, const MoleculeVals& outputs,
+               const MoleculeVals& kms, double kcat);
+  // For ribosomal protein synthesis reactions, we tell it what protein we are synthesizing, and it
+  // assigns the inputs_, outputs_, kms_, kcat_, protein_name_, protein_idx_.
+  ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protein);  
+  void tick(Cell& cell, int num_protein_copies) const;
+  std::string _str() const;
+
+private:
+  void parseHalfFormula(const std::vector<std::string>& tokens, size_t startidx, size_t endidx, MoleculeVals* mvals);
+  void parseFormula(const std::string& formula);
 };
 
 class Biome : public Printable
@@ -202,12 +205,16 @@ public:
   // If the sum is zero, no ribosomes will do anything.
   // If the sum is greater than 1, the distribution will be normalized.
   MoleculeVals transcription_factors_;
+  // This array contains the number of ribosomes assigned to each protein synthesis task.
+  // ribosome_assignments_.vals_.sum() <= cytosol_contents_["Ribosome"].
+  MoleculeVals ribosome_assignments_;
   std::vector<ReactionType::ConstPtr> synthesis_reactions_;
   std::vector<DNAIf::ConstPtr> dna_ifs_;
   
   DNA(const Prokaryotic& pro);
   void tick(Cell& cell);
   std::string _str() const { return ""; }
+  void setDefaultTranscriptionFactors();
 };
 
 class Cell : public Printable
@@ -251,6 +258,7 @@ public:
     assert(molecule_map_.find(name) != molecule_map_.end());
     return molecule_map_.at(name);
   }
+  MoleculeType::ConstPtr molecule(size_t idx) const { return molecule_types_[idx]; }
   
   size_t moleculeIdx(const std::string& name) const;
   const std::string& moleculeName(size_t idx) const { return molecule_types_[idx]->name_; }
@@ -272,10 +280,13 @@ public:
   std::vector<Cell::Ptr> cells_;
 
   std::vector<ReactionType::Ptr> reaction_types_;
-
+  
 private:
   MoleculeType::Ptr _molecule(const std::string& name) const {
     assert(hasMolecule(name));
     return molecule_map_.at(name);
+  }
+  MoleculeType::Ptr _molecule(size_t idx) const {
+    return molecule_types_[idx];
   }
 };
