@@ -22,7 +22,7 @@ run: prokaryotic
 	@echo "============================================================"
 	@echo "= Running simulation"
 	@echo "============================================================"
-	build/run
+	build/run config.yaml
 
 debug_snippet: prokaryotic
 	lldb -o run -- build/debug_snippet

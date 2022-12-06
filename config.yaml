@@ -1,0 +1,45 @@
+
+MoleculeTable:
+  - name: ATP
+    symbol: bang
+    daltons: 507.18
+  - name: ADP
+    symbol: briefcase
+    daltons: 423.7
+  - name: Phosphate
+    symbol: P
+    daltons: 94.97
+  - name: X
+    symbol: X
+    daltons: 500
+  - name: R
+    symbol: R
+    daltons: 1000
+  - name: ATP Synthase
+    symbol: hammer
+    daltons: 5e5
+    half-life-hours: 1
+    num-amino-acids: 5e3
+  - name: ATP Consumer
+    symbol: gear
+    daltons: 1e6
+    num-amino-acids: 5e3
+  - name: Ribosome
+    symbol: factory
+    daltons: 2.7e6
+    num-amino-acids: 2.7e4
+    
+
+ReactionTable:
+  - formula: ADP + Phosphate -> ATP
+    protein: ATP Synthase
+    kcat: 1e-3
+    KMs:
+      ADP: 1e-1
+      Phosphate: 1e-2
+  - formula: 2 X + ATP -> R + ADP + Phosphate
+    protein: ATP Consumer
+    kcat: 1e-2
+    KMs:
+      X: 1e-1
+      ATP: 1e-3

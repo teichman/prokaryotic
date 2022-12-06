@@ -1,3 +1,4 @@
+#include <fmt/core.h>
 #include <prokaryotic.h>
 #include <chrono>
 #include <thread>
@@ -12,6 +13,14 @@ using std::cout, std::endl;
 using std::vector;
 using std::string;
 using Eigen::ArrayXd;
+
+void PASSERT(bool flag, const std::string& msg)
+{
+  if (!flag) {
+    cout << "[PASSERT] " << msg << endl;
+    assert(false);
+  }
+}
 
 
 vector<string> tokenize_simple(const std::string& s)
@@ -68,6 +77,12 @@ ReactionType::ReactionType(const Prokaryotic& pro, const YAML::Node& yaml) :
   kms_(pro)
 {
   string formula = yaml["formula"].as<string>();
+
+  if (yaml["protein"]) {
+    protein_name_ = yaml["protein"].as<string>();
+    protein_idx_ = pro_.moleculeIdx(protein_name_);
+  }
+  
   parseFormula(formula);
   
   kcat_ = yaml["kcat"].as<double>();
@@ -141,35 +156,30 @@ MoleculeType::MoleculeType(const Prokaryotic& pro,
                            const std::string& name,
                            const std::string& symbol,
                            double daltons,
-                           double half_life_hours,
-                           ReactionType::ConstPtr reaction) :
+                           double half_life_hours, double num_amino_acids) :
   idx_(pro.numMoleculeTypes()),
   name_(name),
   symbol_(symbol),
   daltons_(daltons),
   half_life_hours_(half_life_hours),
-  reaction_(reaction)
+  num_amino_acids_(num_amino_acids)
 {
 }
 
-MoleculeType::MoleculeType(const Prokaryotic& pro,
-                           const std::string& name, const std::string& symbol,
-                           const std::vector<MoleculeType::ConstPtr>& constituents,
-                           double half_life_hours,
-                           ReactionType::ConstPtr reaction) :
+MoleculeType::MoleculeType(const Prokaryotic& pro, const YAML::Node& yaml) :
   idx_(pro.numMoleculeTypes()),
-  name_(name),
-  symbol_(symbol),
-  daltons_(0),
-  half_life_hours_(half_life_hours),
-  constituents_(constituents),
-  reaction_(reaction)
+  name_(yaml["name"].as<string>()),
+  symbol_(yaml["symbol"].as<string>()),
+  daltons_(yaml["daltons"].as<double>()),
+  half_life_hours_(std::numeric_limits<double>::max()),
+  num_amino_acids_(0)
 {
-  daltons_ = 0;
-  for (auto mt : constituents_)
-    daltons_ += mt->daltons_;
+  if (yaml["half-life-hours"])
+    half_life_hours_ = yaml["half-life-hours"].as<double>();
+  if (yaml["num-amino-acids"])
+    num_amino_acids_ = yaml["num-amino-acids"].as<double>();
 }
-
+                           
 std::string MoleculeType::_str() const
 {
   std::ostringstream oss;
@@ -177,15 +187,8 @@ std::string MoleculeType::_str() const
   oss << "  idx_: " << idx_ << endl;
   oss << "  symbol_: " << symbol_ << endl;
   oss << "  daltons_: " << daltons_ << endl;
-  oss << "  Constituents: " << endl;
-  for (auto mt : constituents_)
-    oss << "    " << mt->name_ << endl;
-  if (!reaction_)
-    oss << "  Reaction: None" << endl;
-  else {
-    oss << "  Reaction" << endl;
-    oss << reaction_->str("    ") << endl;
-  }
+  oss << "  half_life_hours_: " << half_life_hours_ << endl;
+  oss << "  num_amino_acids_: " << num_amino_acids_ << endl;
   
   return oss.str();
 }
@@ -276,6 +279,7 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   name_(name),
   um3_(1.0),
   cytosol_contents_(pro_),
+  cytosol_contents_denatured_(pro_),
   membrane_contents_(pro_),
   membrane_permeabilities_(pro_),
   dna_(new DNA(pro_))
@@ -288,6 +292,7 @@ std::string Cell::_str() const
   oss << "Cell \"" << name_ << "\"" << endl;
   oss << "  um3_: " << um3_ << endl;
   oss << "  cytosol_contents_: " << endl << cytosol_contents_.str("    ") << endl;
+  oss << "  cytosol_contents_denatured_: " << endl << cytosol_contents_denatured_.str("    ") << endl;
   oss << "  membrane_contents_: " << endl << membrane_contents_.str("    ") << endl;
   return oss.str();
 }
@@ -331,19 +336,21 @@ void Cell::tick(const Biome& biome)
   setCytosolContentsByConcentrations(cytosol_concentrations);
   
   // In-cell reactions.  For now we are assuming all reactions require a protein.
-  for (auto mt : pro_.moleculeTypes()) {
-    if (mt->reaction_) {
-      mt->reaction_->tick(*this, cytosol_contents_[mt->idx_]);
-    }
+  for (auto rt : pro_.reaction_types_) {
+    rt->tick(*this, cytosol_contents_[rt->protein_idx_]);
   }
-
+  
   // Apply degredation of molecules.
   // TODO: Have a member of MoleculeType (or, better, ProteinType) that indicates if the protein is denatured or not.
   // Then add proteasomes that identify denatured proteins (through ubiquitin, though maybe we don't want that ... or maybe we do??)
   // Yeah just do proteasomes for now.
-  for (auto mt : pro_.moleculeTypes())
-    if (mt->pDenature() > 0)
-      cytosol_contents_[mt->idx_] *= (1.0 - mt->pDenature());
+  for (auto mt : pro_.moleculeTypes()) {
+    if (mt->pDenature() > 0) {
+      double num_to_denature = cytosol_contents_[mt->idx_] * mt->pDenature();
+      cytosol_contents_[mt->idx_] -= num_to_denature;
+      cytosol_contents_denatured_[mt->idx_] += num_to_denature;
+    }
+  }
 
   // Apply "DNA programming"
   dna_->tick(*this);
@@ -409,88 +416,21 @@ Prokaryotic::Prokaryotic()
 
 // }
 
-void Prokaryotic::initializeHardcoded()
+void Prokaryotic::initialize(const YAML::Node yaml)
 {
-  // Create all MoleculeTypes first so we avoid the complexity in updating all the MoleculeVals when we add new MoleculeTypes.
-  addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "ADP", ":briefcase:", 423.17)));
-  addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "Phosphate", "P", 94.97)));
-  addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "X", "X", 500)));
-  {
-    std::vector<MoleculeType::ConstPtr> constituents;
-    constituents.push_back(molecule("X"));
-    constituents.push_back(molecule("X"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "R", "R", constituents)));
+  YAML::Node mt = yaml["MoleculeTable"];
+  assert(mt);
+  for (size_t i = 0; i < mt.size(); ++i) {
+    //for (YAML::const_iterator it = mt.begin(); it != mt.end(); ++it) {
+    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, mt[i])));
+  }
+    
+  YAML::Node rt = yaml["ReactionTable"];
+  assert(rt);
+  for (size_t i = 0; i < rt.size(); ++i) {
+    addReactionType(ReactionType::Ptr(new ReactionType(*this, rt[i])));
   }
   
-  {
-    std::vector<MoleculeType::ConstPtr> constituents;
-    constituents.push_back(molecule("ADP"));
-    constituents.push_back(molecule("Phosphate"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "ATP", ":bang:", constituents)));
-  }
-
-  { 
-    std::vector<MoleculeType::ConstPtr> constituents;
-    constituents.push_back(molecule("X"));
-    constituents.push_back(molecule("X"));
-    constituents.push_back(molecule("R"));
-    constituents.push_back(molecule("R"));
-    constituents.push_back(molecule("Phosphate"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "ATP Synthase", ":hammer:", constituents, 1.0)));
-  }
-
-  { 
-    std::vector<MoleculeType::ConstPtr> constituents;
-    constituents.push_back(molecule("X"));
-    constituents.push_back(molecule("X"));
-    constituents.push_back(molecule("R"));
-    constituents.push_back(molecule("R"));
-    constituents.push_back(molecule("Phosphate"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "ATP Consumer", ":gear:", constituents)));
-  }
-  { 
-    std::vector<MoleculeType::ConstPtr> constituents;
-    constituents.push_back(molecule("X"));
-    constituents.push_back(molecule("X"));
-    constituents.push_back(molecule("R"));
-    constituents.push_back(molecule("R"));
-    constituents.push_back(molecule("Phosphate"));
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, "Ribosome", ":factory:", constituents)));
-  }
-
-  
-  // Now add Reactions to MoleculeTypes.
-  {
-    MoleculeVals inputs(*this);
-    inputs["ADP"] = 1;
-    inputs["Phosphate"] = 1;
-    MoleculeVals outputs(*this);
-    outputs["ATP"] = 1;
-    MoleculeVals kms(*this);
-    kms["ADP"] = 1e-1;
-    kms["Phosphate"] = 1e-2;
-    double kcat = 0.001;
-    _molecule("ATP Synthase")->reaction_ = ReactionType::ConstPtr(new ReactionType(*this, inputs, outputs, kms, kcat));
-  }
-
-  {
-    MoleculeVals inputs(*this);
-    inputs["X"] = 2;
-    inputs["ATP"] = 1;
-    MoleculeVals outputs(*this);
-    outputs["R"] = 1;
-    outputs["ADP"] = 1;
-    outputs["Phosphate"] = 1;
-    MoleculeVals kms(*this);
-    kms["X"] = 1e-1;
-    kms["ATP"] = 1e-3;
-    double kcat = 0.01;
-    _molecule("ATP Consumer")->reaction_ = ReactionType::ConstPtr(new ReactionType(*this, inputs, outputs, kms, kcat));
-  }
-  
-  // for (auto mt : molecule_types_)
-  //   cout << mt->str() << endl;
-
   cells_.push_back(Cell::Ptr(new Cell(*this, "aoeu")));
   cells_[0]->membrane_permeabilities_["R"] = 0.0000005;
   cells_[0]->membrane_permeabilities_["Phosphate"] = 0.1;
@@ -509,13 +449,25 @@ void Prokaryotic::initializeHardcoded()
   // cout << str() << endl;
 }
 
+size_t Prokaryotic::moleculeIdx(const std::string& name) const
+{
+  if (!hasMolecule(name)) {
+    cout << "\"" << name << "\" not found in MoleculeTable" << endl;
+    // fmt::print("\"{}\" not found in MoleculeTable.", name);
+    cout << "MoleculeTable: " << endl;
+    for (size_t i = 0; i < molecule_types_.size(); ++i)
+      cout << molecule_types_[i]->str("  ") << endl;
+    assert(hasMolecule(name));
+  }
+  
+  return molecule(name)->idx_;
+}
+
+
 std::string Prokaryotic::_str() const
 {
   std::ostringstream oss;
   oss << "Simulation status" << endl;
-  // oss << "  Reactions" << endl;  
-  // for (auto rt : reaction_types_)
-  //   oss << rt->str("    ") << endl;
   oss << "  Cells" << endl;  
   for (auto cell : cells_)
     oss << cell->str("    ") << endl;

@@ -9,6 +9,7 @@ project(prokaryotic)
 find_package(yaml-cpp REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
+find_package(fmt REQUIRED)
 # include(FindProtobuf)
 # find_package(Protobuf REQUIRED)
 # include_directories(${PROTOBUF_INCLUDE_DIR})
@@ -30,10 +31,10 @@ find_package(Eigen3 REQUIRED NO_MODULE)
 # get_target_property(YAML_CPP_LIBRARIES yaml-cpp IMPORTED_LOCATION_RELEASE)
 
 # # This is a really great trick to inspect cmake.  Thanks chatGPT.
-# get_cmake_property(_variableNames VARIABLES)
-# foreach(_variableName ${_variableNames})
-#   message(STATUS "${_variableName}=${${_variableName}}")
-# endforeach()
+get_cmake_property(_variableNames VARIABLES)
+foreach(_variableName ${_variableNames})
+  message(STATUS "${_variableName}=${${_variableName}}")
+endforeach()
 
 
 include_directories(.)
@@ -49,7 +50,7 @@ add_link_options(-fno-omit-frame-pointer -fno-optimize-sibling-calls -O0)
 # add_link_options(-fsanitize=address)
 
 add_library(prokaryotic SHARED prokaryotic.h prokaryotic.cpp)
-target_link_libraries(prokaryotic Eigen3::Eigen)
+target_link_libraries(prokaryotic Eigen3::Eigen fmt::fmt)
 
 add_executable(run prokaryotic.h run.cpp)
 target_link_libraries(run prokaryotic Eigen3::Eigen ${YAML_CPP_LIBRARIES})

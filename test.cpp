@@ -7,7 +7,8 @@ using Eigen::ArrayXd, Eigen::VectorXd;
 
 TEST_CASE("Cytosol concentrations / contents round trip") {
   Prokaryotic pro;
-  pro.initializeHardcoded();
+  //pro.initializeHardcoded();
+  pro.initialize(YAML::LoadFile("config.yaml"));
 
   MoleculeVals cytosol_contents(pro);
   cytosol_contents[0] = 1e8;
@@ -101,6 +102,8 @@ TEST_CASE("Ribosome")
   pro.biomes_.push_back(biome);
 
   cout << pro.str() << endl;
+  cout << pro.molecule("ATP Synthase")->str() << endl;
+  cout << pro.molecule("ATP Synthase")->pDenature() << endl;
 
   // Confirm that ribosomes don't leak out or degenerate as configured above.
   cell->cytosol_contents_["Ribosome"] = 1000;
@@ -135,8 +138,10 @@ TEST_CASE("Ribosome")
   cout << "----------------------------------------" << endl;
   cout << "Added building blocks to make ATP Synthase out of. " << endl;
   cell->cytosol_contents_["ADP"] = 300;
-  for (int i = 0; i < 1000; ++i)
+  for (int i = 0; i < 100; ++i) {
     pro.tick();
+    //cout << cell->str() << endl;
+  }
   cout << cell->str() << endl;
   CHECK(cell->cytosol_contents_["ATP Synthase"] > 190);
   CHECK(cell->cytosol_contents_["ATP Synthase"] < 210);
@@ -149,14 +154,25 @@ TEST_CASE("Ribosome")
   CHECK(cell->cytosol_contents_["ATP Synthase"] < 10);
 }
 
-TEST_CASE("ReactionType YAML")
+TEST_CASE("YAML")
 {
   Prokaryotic pro;
+
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: ATP\n"
+                                                                         "symbol: bang\n"
+                                                                         "daltons: 507.18"))));
+  cout << pro.molecule("ATP")->str() << endl;
+  CHECK(pro.molecule("ATP")->name_ == "ATP");
+  CHECK(pro.molecule("ATP")->symbol_ == "bang");
+  CHECK(pro.molecule("ATP")->daltons_ == 507.18);
+  
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 1)));
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 1)));
+  // pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "X", "", 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "R", "", 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", "", 1)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Consumer", "", 1)));
 
   { 
     YAML::Node yaml = YAML::Load("formula: ADP + Phosphate -> ATP\n"
@@ -206,4 +222,10 @@ TEST_CASE("ReactionType YAML")
     CHECK(rt.kms_.vals_.sum() == rt.kms_["X"] + rt.kms_["ATP"]);
   }
   
+}
+
+// We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.
+// bc of the biome <> cell permeability math.
+TEST_CASE("Static cell")
+{
 }

@@ -68,12 +68,15 @@ class ReactionType : public Printable
 {
 public:
   typedef std::shared_ptr<const ReactionType> ConstPtr;
+  typedef std::shared_ptr<ReactionType> Ptr;
 
   const Prokaryotic& pro_;
   MoleculeVals inputs_;
   MoleculeVals outputs_;
   MoleculeVals kms_;  // concentrations that yield half the max rate.  Each element is mM.
   double kcat_;  // max rate per tick (1 tick is 1 second?)
+  std::string protein_name_;
+  size_t protein_idx_;
 
   ReactionType(const Prokaryotic& pro, const YAML::Node& yaml);
   ReactionType(const Prokaryotic& pro,
@@ -111,18 +114,13 @@ public:
   std::string symbol_;
   double daltons_;
   double half_life_hours_;
-  std::vector<MoleculeType::ConstPtr> constituents_;
-  ReactionType::ConstPtr reaction_;  // If a protein, this is the reaction it catalyzes 
+  double num_amino_acids_;
 
-  MoleculeType(const Prokaryotic& pro,
-               const std::string& name, const std::string& symbol, double daltons,
+  MoleculeType(const Prokaryotic& pro, const std::string& name, const std::string& symbol,
+               double daltons,
                double half_life_hours = std::numeric_limits<double>::max(),
-               ReactionType::ConstPtr reaction = ReactionType::ConstPtr(nullptr));
-  MoleculeType(const Prokaryotic& pro,
-               const std::string& name, const std::string& symbol,
-               const std::vector<MoleculeType::ConstPtr>& constituents,
-               double half_life_hours = std::numeric_limits<double>::max(),
-               ReactionType::ConstPtr reaction = ReactionType::ConstPtr(nullptr));
+               double num_amino_acids = 0);
+  MoleculeType(const Prokaryotic& pro, const YAML::Node& yaml);
   
   std::string _str() const;
   double pDenature() const { return probabilityPerSecond(half_life_hours_); }
@@ -180,6 +178,7 @@ public:
   std::string name_;
   double um3_;  // 1e-18 m3, or 1e-15 L (i.e. femtoliter)
   MoleculeVals cytosol_contents_;
+  MoleculeVals cytosol_contents_denatured_;
   MoleculeVals membrane_contents_;
   MoleculeVals membrane_permeabilities_;
   DNA::Ptr dna_;  // non-const so Prokaryotic can make changes to it.
@@ -202,7 +201,8 @@ class Prokaryotic : public Printable
 {
 public:
   Prokaryotic();
-  
+
+  void addReactionType(ReactionType::Ptr rt) { reaction_types_.push_back(rt); }
   void addMoleculeType(MoleculeType::Ptr mt);
   
   MoleculeType::ConstPtr molecule(const std::string& name) const {
@@ -210,7 +210,7 @@ public:
     return molecule_map_.at(name);
   }
   
-  size_t moleculeIdx(const std::string& name) const { return molecule(name)->idx_; }
+  size_t moleculeIdx(const std::string& name) const;
   const std::string& moleculeName(size_t idx) const { return molecule_types_[idx]->name_; }
   std::vector<MoleculeType::ConstPtr> moleculeTypes() const;
   size_t numMoleculeTypes() const { return molecule_types_.size(); }
@@ -221,12 +221,15 @@ public:
   void run();
   void runTests();
   void initializeHardcoded();
+  void initialize(const YAML::Node yaml);
 
 //private:
   std::vector<MoleculeType::Ptr> molecule_types_;
   std::map<std::string, MoleculeType::Ptr> molecule_map_;
   std::vector<Biome::Ptr> biomes_;
   std::vector<Cell::Ptr> cells_;
+
+  std::vector<ReactionType::Ptr> reaction_types_;
 
 private:
   MoleculeType::Ptr _molecule(const std::string& name) const {
