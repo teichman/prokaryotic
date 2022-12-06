@@ -475,27 +475,26 @@ void DNA::tick(Cell& cell)
   if (!cell.cytosol_contents_.hasMolecule("Ribosome"))
     return;
   
-  transcription_factors_.vals_.setZero();
+  transcription_factors_.vals_.setOnes();
 
-  // Eventually this code will be programmable by the player.  For now we're just hardcoding it.
-  // Probably better would be something that adjusts the rate of ribosomal construction of ATP Synthase based on the
-  // concentration of ATP Synthase.
-  if (cell.cytosol_contents_.hasMolecule("ATP Synthase") && cell.cytosol_contents_["ATP Synthase"] < 200) {
-    // Run the reaction that generates ATP Synthase.
-    // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
-    // Approx 5 ATP for each amino acid in the sequence.
-    // 200 amino acids per minute made by ribosomes.  This is ~3 / second.  Maybe this is how we set kcat for the ribosome, and then
-    // the synthesis rate drops if there aren't enough building blocks around.  Not sure how to set the KM values though.
-    // Typically 100-600 amino acids per protein.  (Some are crazy long, but maybe that is just eukaryotes..)
-    // Probably we want to ignore the fact that it's 3aa / second and just absorb that into kcat though.
-    // ReactionType for protein synthesis is just a ReactionType stored in DNA class (which includes ribosome count) with kcat
-    // set by num_aa of the protein, and num_protein_copies is determined by the number of ribosomes assigned to this protein.
-    // That in turn is set by a distribution over genes that the user can set, also in the DNA programming - you can set promotion
-    // factors in R^+, one for each gene, and ribosomes get assigned to genes according to a normalized distribution over genes.
-    transcription_factors_["ATP Synthase"] = 1.0;
+  for (auto dnaif : dna_ifs_) {
+    dnaif->execute(&cell);
   }
-
-  // This part the user cannot touch.
+  
+  // if (cell.cytosol_contents_.hasMolecule("ATP Synthase") && cell.cytosol_contents_["ATP Synthase"] < 200) {
+  //   // Run the reaction that generates ATP Synthase.
+  //   // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
+  //   // Approx 5 ATP for each amino acid in the sequence.
+  //   // 200 amino acids per minute made by ribosomes.  This is ~3 / second.  Maybe this is how we set kcat for the ribosome, and then
+  //   // the synthesis rate drops if there aren't enough building blocks around.  Not sure how to set the KM values though.
+  //   // Typically 100-600 amino acids per protein.  (Some are crazy long, but maybe that is just eukaryotes..)
+  //   // Probably we want to ignore the fact that it's 3aa / second and just absorb that into kcat though.
+  //   // ReactionType for protein synthesis is just a ReactionType stored in DNA class (which includes ribosome count) with kcat
+  //   // set by num_aa of the protein, and num_protein_copies is determined by the number of ribosomes assigned to this protein.
+  //   // That in turn is set by a distribution over genes that the user can set, also in the DNA programming - you can set promotion
+  //   // factors in R^+, one for each gene, and ribosomes get assigned to genes according to a normalized distribution over genes.
+  //   transcription_factors_["ATP Synthase"] = 1.0;
+  // }
 
   // If the transcription factors sum to greater than one, make them sum to one.
   // Otherwise leave them alone.
@@ -505,6 +504,7 @@ void DNA::tick(Cell& cell)
   else
     normalized_transcription_factors.vals_ = transcription_factors_.vals_;
 
+  // Run protein synthesis reactions.
   assert(transcription_factors_.vals_.size() == synthesis_reactions_.size());
   for (int i = 0; i < transcription_factors_.vals_.size(); ++i)
     if (synthesis_reactions_[i] && normalized_transcription_factors[i] > 0)

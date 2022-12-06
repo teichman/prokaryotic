@@ -135,6 +135,7 @@ TEST_CASE("Ribosome")
   // Now add the building blocks.  We should get some ATP Synthase.
   // Ofc this depends on the "DNA programming" the user will do, and right now that's hardcoded,
   // and changing that will break this test.  That's ok.
+  // We're not setting any DNA programming rules, so the default is just to make them all equally.
   cout << "----------------------------------------" << endl;
   cout << "Added building blocks to make ATP Synthase out of. " << endl;
   cell->cytosol_contents_["ADP"] = 300;
@@ -143,8 +144,7 @@ TEST_CASE("Ribosome")
     //cout << cell->str() << endl;
   }
   cout << cell->str() << endl;
-  CHECK(cell->cytosol_contents_["ATP Synthase"] > 190);
-  CHECK(cell->cytosol_contents_["ATP Synthase"] < 210);
+  CHECK(cell->cytosol_contents_["ATP Synthase"] > 200);
 
   cout << "----------------------------------------" << endl;
   cout << "ATP Synthase breaks down and we run out of building blocks. " << endl;
@@ -312,6 +312,29 @@ TEST_CASE("DNAIf")
     // Now transcription factors should change.
     cell->cytosol_contents_["ATP Synthase"] = 200;
     dnaif.execute(cell.get());
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1.0);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 1.0);
+  }
+
+  SUBCASE("DNA::tick()")
+  {
+    Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+    pro.biomes_.push_back(biome);
+
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: ATP Synthase < 300\n"
+                                                                        "then:\n"
+                                                                        "  - all = 0\n"
+                                                                        "  - ATP Synthase += 1.0"))));
+
+    cell->cytosol_contents_["ATP Synthase"] = 200;
+    
+    CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1.0);
+    CHECK(cell->dna_->transcription_factors_["Ribosome"] == 1.0);
+    CHECK(cell->dna_->transcription_factors_.vals_.sum() == 2.0);
+    
+    cell->tick(*biome);
+    
     CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 1.0);
     CHECK(cell->dna_->transcription_factors_["Ribosome"] == 0);
     CHECK(cell->dna_->transcription_factors_.vals_.sum() == 1.0);
