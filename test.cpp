@@ -168,7 +168,6 @@ TEST_CASE("YAML")
   
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 1)));
-  // pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "X", "", 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "R", "", 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", "", 1)));

@@ -43,3 +43,16 @@ ReactionTable:
     KMs:
       X: 1e-1
       ATP: 1e-3
+
+# Oof: Can't put quotes on things.  That makes parsing more annoying.
+# I guess we can search for strings in here, convert them to objects, etc., and "compile" an "expression" object once,
+# then execute that efficiently and repeatedly with every tick.
+# Eventually this shouldn't be YAML, just a DSL.
+DNA:
+  - if: ATP Synthase < 300
+    then:
+      - ATP Synthase += 1.0
+  - if: ATP Synthase < 200
+    then:
+      - all = 0.0
+      - ATP Synthase = 1.0

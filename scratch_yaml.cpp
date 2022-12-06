@@ -27,11 +27,29 @@ This is the third line.)";
   cout << "Entire file: " << endl;
   cout << YAML::Dump(config) << endl;
 
+
+  const YAML::Node& dna = config["DNA"];
+  for (const YAML::Node& cond : dna) {
+    cout << "condition: " << cond["if"].as<string>() << endl;
+    for (const YAML::Node& result : cond["then"]) {
+      cout << "  result: " << result.as<string>() << endl;
+    }
+  }
+    
+  // for (YAML::const_iterator it = dna.begin(); it != dna.end(); ++it) {
+  //   cout << "IsMap: " << it->IsMap() << endl;
+  //   cout << "whole thing: " << *it << endl;
+  //   cout << "first: " << it->first.as<string>() << endl;
+  //   cout << "second: " << it->second << endl;
+  // }
+  
+  return 0;
+
   cout << "------------------------------------------------------------" << endl;
   cout << endl;
   cout << config["ReactionTable"] << endl;
   cout << "------------------------------------------------------------" << endl;
-
+  
   YAML::Node rt = config["ReactionTable"];
   for (YAML::const_iterator it = rt.begin(); it != rt.end(); ++it) {
     const YAML::Node& rxn = *it;
