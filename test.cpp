@@ -359,12 +359,12 @@ TEST_CASE("DNAIf")
   }
 }
 
-TEST_CASE("Protein synthesis")
+TEST_CASE("Protein synthesis rate as a function of num amino acids")
 {
   Prokaryotic pro;
   
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein X", "", 0, 1)));
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein 2X", "", 0, 2)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein X", "", 0, 100)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein 2X", "", 0, 200)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Amino acids", "", 0)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 0, 150000)));  // Really big so they don't really get produced
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 0)));
@@ -385,17 +385,26 @@ TEST_CASE("Protein synthesis")
   cell->membrane_permeabilities_["ADP"] = 1.0;
 
   // Start off with some ribosomes
-  cell->cytosol_contents_["Ribosome"] = 3e4;  // should get 10k each to ribosomes, X, and 2X.
+  cell->cytosol_contents_["Ribosome"] = 2e4;  // should get 10k each to ribosomes, X, and 2X.
 
-  
-  for (int i = 0; i < 100; ++i) {
+  // Ok just don't make any ribosomes, it's complicating things.
+  cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
+                                                                      "then:\n"
+                                                                      "  - Ribosome = 0.0"))));
+
+    
+  for (int i = 0; i < 100000; ++i) {
     pro.tick();
-    cout << "------" << endl;
-    cout << cell->str() << endl;
-    cout << "concentrations: " << endl << cell->cytosolConcentrations().str("  ") << endl;
+    // cout << "------" << endl;
+    // cout << cell->str() << endl;
+    // cout << "concentrations: " << endl << cell->cytosolConcentrations().str("  ") << endl;
     //cin.ignore();
   }
+  cout << cell->str() << endl;
+  cout << "concentrations: " << endl << cell->cytosolConcentrations().str("  ") << endl;
 
+  CHECK(cell->cytosol_contents_["Ribosome"] == 2e4);
+  
   // With equal transcription factors (the default), confirm that 2*num_amino_acids_ means 1/2 the production rate.
   // Allow 5% error.
   CHECK(2*cell->cytosol_contents_["Protein 2X"] / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));

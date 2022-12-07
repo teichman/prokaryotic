@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <random>
 #include <fmt/ranges.h>
 #include <fmt/core.h>
@@ -136,6 +137,16 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
   cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
   cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
 
+  // It's possible for us to accidentally overstep our bounds here and end up making something go negative.
+  // If that happens, print a warning but continue.
+  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
+    if (cell.cytosol_contents_[i] < 0) {
+      cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i]
+           << ".  Clipping it back to zero." << endl;
+      cell.cytosol_contents_.vals_[i] = 0;
+    }
+  }
+  
   // Should only need one of these at the end of Cell::tick()
   //cell.cytosol_contents_.probabilisticRound();
 }
@@ -288,7 +299,7 @@ void MoleculeVals::probabilisticRound()
 {
   for (int i = 0; i < vals_.size(); ++i) {
     double thresh = (ArrayXd::Random(1)[0] + 1.0) / 2.0;  // slow but convenient.  ArrayXd::Random generates random doubles in [-1, 1].
-    if (vals_[i] - int(vals_[i]) > thresh)
+    if (vals_[i] - uint64_t(vals_[i]) > thresh)
       vals_[i] = std::ceil(vals_[i]);
     else
       vals_[i] = std::floor(vals_[i]);
@@ -600,7 +611,7 @@ void DNA::tick(Cell& cell)
   // Collapse probability distributions over new proteins.  
   cell.cytosol_contents_.probabilisticRound();
   for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i)
-    assert(fabs(cell.cytosol_contents_.vals_[i] - int(cell.cytosol_contents_.vals_[i])) < 1e-6);
+    assert(fabs(cell.cytosol_contents_.vals_[i] - uint64_t(cell.cytosol_contents_.vals_[i])) < 1e-6);
   
   // If we produced any proteins, free up the corresponding ribosomes.  
   ArrayXd new_molecules = cell.cytosol_contents_.vals_ - orig_cytosol_contents.vals_;
@@ -613,7 +624,7 @@ void DNA::tick(Cell& cell)
       // Just for the proteins:
       if (nmt->num_amino_acids_ > 0) {
         // Num new proteins should always be approx an int.
-        assert(fabs(new_molecules[i] - int(new_molecules[i])) < 1e-6);
+        assert(fabs(new_molecules[i] - uint64_t(new_molecules[i])) < 1e-6);
         // Free up the ribosomes corresponding to the new proteins.
         // Very small proteins can be generated at a rate more than 1 protein per tick.
         // In this case, the num proteins generated will be greater than the number of ribosomes assigned.
