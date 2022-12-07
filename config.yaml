@@ -14,53 +14,47 @@ MoleculeTable:
   - name: Phosphate
     symbol: P
     daltons: 94.97
-  - name: X
-    symbol: X
-    daltons: 500
-  - name: R
-    symbol: R
-    daltons: 1000
+  - name: Starch
+    symbol: S
+    daltons: 18015.6  # Uh, 100 glucoses?  I don't have a way to represent polymers rn.
+  - name: Glucose
+    symbol: G
+    daltons: 180.156
   - name: ATP Synthase
     symbol: hammer
-    daltons: 5e5
-    half-life-hours: 1
     num-amino-acids: 5e3
-  - name: ATP Consumer
-    symbol: gear
-    daltons: 1e6
-    num-amino-acids: 5e3
+    half-life-hours: 20  # https://www.researchgate.net/figure/Half-life-calculation-for-three-subunits-of-the-mitochondrial-ATP-synthase-in-response-to_fig12_334548965
+  - name: Amylase
+    num-amino-acids: 496
+    half-life-hours: 10
   - name: Ribosome
     symbol: factory
-    daltons: 2.7e6
-    num-amino-acids: 7459
+    num-amino-acids: 12600  # https://bscb.org/learning-resources/softcell-e-learning/ribosome/.  4.2Mda, 1/3 protein.
+    half-life-hours: 100
   - name: Proteasome
-    symbol: aoeu
-    daltons: 2.4e6  # http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/
     num-amino-acids: 2e4  # figure 2 of http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/ 
     half-life-hours: 60  # http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/
 
-    
-
 ReactionTable:
-  - formula: ADP + Phosphate -> ATP
+  - formula: Glucose + 30 ADP + 30 Phosphate -> 30 ATP
     protein: ATP Synthase
     kcat: 1e-3
     KMs:
-      ADP: 1e-1
+      Glucose: 1e-1
+      ADP: 1e-2
       Phosphate: 1e-2
-  - formula: 2 X + ATP -> R + ADP + Phosphate
-    protein: ATP Consumer
-    kcat: 1e-2
+  - formula: Starch -> 100 Glucose  # no ATP needed.
+    protein: Amylase
+    kcat: 9.21  # https://www.sciencedirect.com/science/article/pii/S1046592816300547
     KMs:
-      X: 1e-1
-      ATP: 1e-3
-
+      Starch: 2.86  # https://www.sciencedirect.com/science/article/pii/S1046592816300547
 
 BiomeTable:
-  - name: Alkaline Vents
+  - name: Petri dish
+    m3: 1e-5
     concentrations:
-      Amino acids: 100  # Above the ribosomal KM for AAs.
-      Phosphate: 1
+      Amino acids: 1
+      Starch: 50
       
 # This is pretty janky but I guess will do for now.
 # Eventually this shouldn't be YAML, just a small DSL that is compiled into C++ objects representing the expressions.
@@ -68,25 +62,36 @@ BiomeTable:
 # Also it's weird to use "X" for the concentration of something in the if statement, and then "X" for the TF target.
 # They're totally different things.
 DNA:
-  - if: ATP Synthase < 300
-    then:
-      - ATP Synthase += 1.0
-  - if: ATP Synthase < 200
-    then:
-      - all = 0.0
-      - ATP Synthase = 1.0
   - if: Ribosome > 30000
     then:
       - Ribosome = 0.0
-  - if: Ribosome < 30000
+  - if: ATP Synthase > 30000
     then:
-      - Ribosome = 1.0
-  - if: Ribosome < 20000
+      - ATP Synthase = 0.0
+  - if: Amylase > 30000
     then:
-      - Ribosome = 2.0
-  - if: Ribosome < 10000
+      - Amylase = 0.0
+  - if: Proteasome > 30000
     then:
-      - Ribosome = 3.0
+      - Proteasome = 0.0
   # - if: Ribosomes > 7e4
   #   then:
   #     - divide()
+
+
+
+  # - formula: 2 X + ATP -> R + ADP + Phosphate
+  #   protein: ATP Consumer
+  #   kcat: 1e-2
+  #   KMs:
+  #     X: 1e-1
+  #     ATP: 1e-3
+    # - name: ATP Consumer
+    # symbol: gear
+    # num-amino-acids: 5e3
+  # - name: X
+  #   symbol: X
+  #   daltons: 500
+  # - name: R
+  #   symbol: R
+  #   daltons: 1000

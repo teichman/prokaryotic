@@ -163,6 +163,7 @@ public:
   std::string name_;
   
   Biome(const Prokaryotic& pro, double m3, const std::string& name);
+  Biome(const Prokaryotic& pro, const YAML::Node& yaml);
   std::string _str() const;
   void tick();
 };
@@ -230,6 +231,8 @@ public:
   MoleculeVals ribosome_assignments_;
   std::vector<ReactionType::ConstPtr> synthesis_reactions_;
   std::vector<DNAIf::ConstPtr> dna_ifs_;
+  // How many copies of each gene you have.  This affects ribosomal parallelization.
+  //MoleculeVals gene_copy_numbers_;
   
   DNA(const Prokaryotic& pro);
   void tick(Cell& cell);
@@ -263,6 +266,7 @@ public:
   void setCytosolContentsByConcentrations(const MoleculeVals& cytosol_concentrations);
   // concentrations is mM
   static MoleculeVals cytosolContents(const Prokaryotic& pro, const MoleculeVals& cytosol_concentrations, double um3);
+  void addDNAIf(const YAML::Node& yaml);
 };
 
 // Contains the whole simulation model
@@ -273,7 +277,13 @@ public:
   Prokaryotic();
 
   void addReactionType(ReactionType::Ptr rt) { reaction_types_.push_back(rt); }
+  void addReactionType(const YAML::Node& yaml);
   void addMoleculeType(MoleculeType::Ptr mt);
+  void addMoleculeType(const YAML::Node& yaml);
+  void addBiome(Biome::Ptr biome) { biomes_.push_back(biome); }
+  void addBiome(const YAML::Node& yaml);
+  void applyConfig(const std::string& path);
+  void applyConfig(const YAML::Node& yaml2);
   
   MoleculeType::ConstPtr molecule(const std::string& name) const {
     assert(molecule_map_.find(name) != molecule_map_.end());
@@ -290,9 +300,6 @@ public:
   void tick();
   std::string _str() const;
   void run();
-  void runTests();
-  void initializeHardcoded();
-  void initialize(const YAML::Node yaml);
 
 //private:
   std::vector<MoleculeType::Ptr> molecule_types_;

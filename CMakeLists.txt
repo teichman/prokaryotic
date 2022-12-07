@@ -42,8 +42,8 @@ target_link_libraries(prokaryotic Eigen3::Eigen fmt::fmt ${YAML_CPP_LIBRARIES})
 # get_target_property(OUT prokaryotic LINK_LIBRARIES)
 # message("HELLO ${OUT}")
 
-add_executable(run prokaryotic.h run.cpp)
-target_link_libraries(run prokaryotic Eigen3::Eigen ${YAML_CPP_LIBRARIES})
+# add_executable(run prokaryotic.h run.cpp)
+# target_link_libraries(run prokaryotic Eigen3::Eigen ${YAML_CPP_LIBRARIES})
 
 add_executable(test prokaryotic.h doctest.h test.cpp)
 target_link_libraries(test prokaryotic Eigen3::Eigen ${YAML_CPP_LIBRARIES})

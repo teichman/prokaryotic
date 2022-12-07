@@ -15,8 +15,22 @@ void printHeader()
 TEST_CASE("Cytosol concentrations / contents round trip") {
   printHeader();
   Prokaryotic pro;
-  //pro.initializeHardcoded();
-  pro.initialize(YAML::LoadFile("config.yaml"));
+
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "X", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "R", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 0)));
+  
+  pro.cells_.push_back(Cell::Ptr(new Cell(pro, "aoeu")));
+  pro.cells_[0]->membrane_permeabilities_["R"] = 0.0000005;
+  pro.cells_[0]->membrane_permeabilities_["Phosphate"] = 0.1;
+  pro.cells_[0]->membrane_permeabilities_["X"] = 0.001;
+  
+  pro.biomes_.push_back(Biome::Ptr(new Biome(pro, 10, "Alkaline vents")));
+  pro.biomes_[0]->concentrations_["Phosphate"] = 0.01;
+  pro.biomes_[0]->concentrations_["R"] = 0;
+  pro.biomes_[0]->concentrations_["X"] = 10;
+  
+  pro.cells_[0]->setCytosolContentsByConcentrations(pro.biomes_[0]->concentrations_);
 
   MoleculeVals cytosol_contents(pro);
   cytosol_contents[0] = 1e8;
@@ -689,6 +703,87 @@ TEST_CASE("Proteasome")
     cout << cell->cytosol_contents_denatured_.str("  ") << endl;
     CHECK(cell->cytosol_contents_denatured_.vals_.sum() == doctest::Approx(0));
   }
+}
+
+TEST_CASE("Full system so far")
+{
+  printHeader();
+  Prokaryotic pro;
+
+  pro.applyConfig("config.yaml");
+  Cell::Ptr cell(new Cell(pro, "cell"));
+  pro.cells_.push_back(cell);
+
+  // The cell is taking in things in the environment at some rate.  Nevermind how, for the moment.
+  cell->membrane_permeabilities_["Amino acids"] = 0.1;
+  cell->membrane_permeabilities_["Starch"] = 0.01;
+
+  // Start us off with some of each important molecule.
+  cell->cytosol_contents_["Amino acids"] = 6e7;  // 100 mM sounds typical
+  cell->cytosol_contents_["ATP"] = 6e6;  // 10 mM sounds typical, maybe a bit high
+  cell->cytosol_contents_["Phosphate"] = 6e6;
+  cell->cytosol_contents_["Starch"] = 6e6;
+  cell->cytosol_contents_["Glucose"] = 6e6;
+  
+  // Dunno how much of these we need, we'll see where they end up at steady state.
+  cell->cytosol_contents_["ATP Synthase"] = 1e4;
+  cell->cytosol_contents_["Amylase"] = 1e4;
+  cell->cytosol_contents_["Ribosome"] = 1e4;
+  cell->cytosol_contents_["Proteasome"] = 1e4;
+
+  const YAML::Node& yaml = YAML::LoadFile("config.yaml");
+  for (const YAML::Node& dnaif : yaml["DNA"])
+    cell->addDNAIf(dnaif);
+
+  for (int i = 0; i < 24*60*60; ++i) {
+    if (i < 2 || i > 24*60*60 - 2) {
+      cout << "tick " << i << endl;
+      cout << cell->str("  ") << endl;
+    }
+    pro.tick();
+  }
+  
+  
+  // ostringstream oss;
+  // oss << "MoleculeTable:" << endl
+  //     << "  - name: Amino acids" << endl
+  //     << "    symbol: brick" << endl
+  //     << "    daltons: 100" << endl
+  //     << "  - name: ATP" << endl
+  //     << "    symbol: bang" << endl
+  //     << "    daltons: 507.18" << endl
+  //     << "  - name: ADP" << endl
+  //     << "    symbol: briefcase" << endl
+  //     << "    daltons: 423.7" << endl
+  //     << "  - name: Phosphate" << endl
+  //     << "    symbol: P" << endl
+  //     << "    daltons: 94.97" << endl
+  //     << "  - name: X" << endl
+  //     << "    symbol: X" << endl
+  //     << "    daltons: 500" << endl
+  //     << "  - name: R" << endl
+  //     << "    symbol: R" << endl
+  //     << "    daltons: 1000" << endl
+  //     << "  - name: ATP Synthase" << endl
+  //     << "    symbol: hammer" << endl
+  //     << "    daltons: 5e5" << endl
+  //     << "    half-life-hours: 1" << endl
+  //     << "    num-amino-acids: 5e3" << endl
+  //     << "  - name: ATP Consumer" << endl
+  //     << "    symbol: gear" << endl
+  //     << "    daltons: 1e6" << endl
+  //     << "    num-amino-acids: 5e3" << endl
+  //     << "  - name: Ribosome" << endl
+  //     << "    symbol: factory" << endl
+  //     << "    daltons: 2.7e6" << endl
+  //     << "    num-amino-acids: 7459" << endl
+  //     << "  - name: Proteasome" << endl
+  //     << "    symbol: aoeu" << endl
+  //     << "    daltons: 2.4e6  # http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/" << endl
+  //     << "    num-amino-acids: 2e4  # figure 2 of http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/ " << endl
+  //     << "    half-life-hours: 60  # http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/" << endl
+
+    
 }
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.

@@ -329,15 +329,20 @@ MoleculeType::MoleculeType(const Prokaryotic& pro,
 MoleculeType::MoleculeType(const Prokaryotic& pro, const YAML::Node& yaml) :
   idx_(pro.numMoleculeTypes()),
   name_(yaml["name"].as<string>()),
-  symbol_(yaml["symbol"].as<string>()),
-  daltons_(yaml["daltons"].as<double>()),
+  daltons_(0),
   half_life_hours_(std::numeric_limits<double>::max()),
   num_amino_acids_(0)
 {
+  if (yaml["symbol"])
+    symbol_ = yaml["symbol"].as<string>();
   if (yaml["half-life-hours"])
     half_life_hours_ = yaml["half-life-hours"].as<double>();
-  if (yaml["num-amino-acids"])
+  if (yaml["num-amino-acids"]) {
     num_amino_acids_ = yaml["num-amino-acids"].as<double>();
+    daltons_ = num_amino_acids_ * 110;  // avg
+  }
+  if (yaml["daltons"])
+    daltons_ = yaml["daltons"].as<double>();
 }
                            
 std::string MoleculeType::_str() const
@@ -427,6 +432,22 @@ Biome::Biome(const Prokaryotic& pro, double m3, const std::string& name) :
 {
 }
 
+Biome::Biome(const Prokaryotic& pro, const YAML::Node& yaml) :
+  pro_(pro),
+  concentrations_(pro)
+{
+  name_ = yaml["name"].as<string>();
+  m3_ = yaml["m3"].as<double>();
+  
+  for (YAML::const_iterator cit = yaml["concentrations"].begin(); cit != yaml["concentrations"].end(); ++cit) {
+    string molecule_name = cit->first.as<string>();
+    concentrations_[molecule_name] = cit->second.as<double>();
+  }  
+  cout << "Loaded biome" << endl;
+  cout << str("  ") << endl;
+}
+  
+
 std::string Biome::_str() const
 {
   std::ostringstream oss;
@@ -459,6 +480,11 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
         proteasome_reactions_.push_back(ProteasomeReactionType::Ptr(new ProteasomeReactionType(pro_, i)));
 }
 
+void Cell::addDNAIf(const YAML::Node& yaml)
+{
+  dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro_, yaml)));
+}
+
 std::string Cell::_str() const
 {
   std::ostringstream oss;
@@ -477,6 +503,7 @@ MoleculeVals countsToConcentrations(const MoleculeVals& counts, double um3)
   // mM = 1e3 * (num / 6e23) / (um3 * 1e-15)
   // mM = 1.67e-06 * num / um3
 
+  PASSERT((counts.vals_ >= 0.0).all(), fmt::format("{}", counts.vals_));
   MoleculeVals concentrations(counts.pro_);
   concentrations.vals_ = counts.vals_ * (1.67e-6 / um3);
   assert((concentrations.vals_ >= 0.0).all());
@@ -515,6 +542,7 @@ void Cell::tick(const Biome& biome)
   // Passive membrane permeations
   MoleculeVals cytosol_concentrations = cytosolConcentrations();
   auto deltas = (biome.concentrations_.vals_ - cytosol_concentrations.vals_);
+  assert((membrane_permeabilities_.vals_ < 1.0 + 1e-6).all());
   auto step = membrane_permeabilities_.vals_ * deltas;
   cytosol_concentrations.vals_ += step;
   setCytosolContentsByConcentrations(cytosol_concentrations);
@@ -709,8 +737,9 @@ void DNA::tick(Cell& cell)
   //   * If there are negative numbers, replace them with zeros.
   //   * If the transcription factors sum to greater than one, make them sum to one.
   //   * Otherwise leave them alone.
-  
-  MoleculeVals ntfs(pro_);  // normalized transcription factors
+
+  // Compute normalized transcription factors. (User specifies an unnormalized distribution over genes.)
+  MoleculeVals ntfs(pro_);  
   ntfs.vals_ = transcription_factors_.vals_.max(ArrayXd::Zero(transcription_factors_.vals_.size()));
   if (ntfs.vals_.sum() > 1.0)
     ntfs.vals_ /= ntfs.vals_.sum();
@@ -722,7 +751,9 @@ void DNA::tick(Cell& cell)
   // Free ribosomes are assigned according to the normalized distribution of deltas.
   assert(ntfs.vals_.size() == synthesis_reactions_.size());
   int num_free_ribosomes = cell.cytosol_contents_["Ribosome"] - ribosome_assignments_.vals_.sum();
-  assert(num_free_ribosomes >= 0);
+  // PASSERT(num_free_ribosomes >= -1, fmt::format("num_free_ribosomes: {}", num_free_ribosomes));
+  num_free_ribosomes = std::max(0, num_free_ribosomes);
+  
   MoleculeVals ribosome_assignment_deltas(pro_);
   for (int i = 0; i < ntfs.vals_.size(); ++i) {
     if (ntfs.vals_[i] > 0) {
@@ -740,16 +771,20 @@ void DNA::tick(Cell& cell)
   // Otherwise, prorate evenly.
   else {
     double multiplier = num_free_ribosomes / ribosome_assignment_deltas.vals_.sum();
-    ribosome_assignments_.vals_ += ribosome_assignment_deltas.vals_ * multiplier;
+    ribosome_assignments_.vals_ += floor(ribosome_assignment_deltas.vals_ * multiplier);
   }
   assert((ribosome_assignments_.vals_ >= 0).all());
+    
   // It is not the case that all ribosomes will be assigned.  If TFs sum to <1, by design we will not assign all ribosomes.
   // However if TFs sum to >= 1, then all ribosomes should be assigned at this point in the code.
   // Eventually: There should be a limit to how many ribosomes can work on one gene, like maybe 1 ribosome per 20 AAs.
   // (times number of gene copies) 
-  if (fabs(ntfs.vals_.sum() - 1.0) < 1e-3) {
+  if (fabs(ntfs.vals_.sum() - 1.0) < 1e-3 && cell.cytosol_contents_["Ribosome"] > 0) {
     // Rounding errors can make us be slightly off though.
-    assert(fabs(ribosome_assignments_.vals_.sum() - cell.cytosol_contents_["Ribosome"]) < 1.0 + 1e-3);
+    PASSERT(ribosome_assignments_.vals_.sum() / cell.cytosol_contents_["Ribosome"] > 0.99,
+            fmt::format("Num ribosomes: {}, ribosome_assignments_: {}",
+                        cell.cytosol_contents_["Ribosome"],
+                        ribosome_assignments_.vals_));
   }
   
   // Get random ordering to use for the synthesis reactions.
@@ -799,49 +834,13 @@ void DNA::tick(Cell& cell)
     }
   }
 
+  ribosome_assignments_.probabilisticRound();
   assert((ribosome_assignments_.vals_ >= 0).all());
 }
 
 Prokaryotic::Prokaryotic()
 {}
 
-// void Prokaryotic::initializeCore()
-// {
-
-// }
-
-void Prokaryotic::initialize(const YAML::Node yaml)
-{
-  YAML::Node mt = yaml["MoleculeTable"];
-  assert(mt);
-  for (size_t i = 0; i < mt.size(); ++i) {
-    //for (YAML::const_iterator it = mt.begin(); it != mt.end(); ++it) {
-    addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, mt[i])));
-  }
-    
-  YAML::Node rt = yaml["ReactionTable"];
-  assert(rt);
-  for (size_t i = 0; i < rt.size(); ++i) {
-    addReactionType(ReactionType::Ptr(new ReactionType(*this, rt[i])));
-  }
-  
-  cells_.push_back(Cell::Ptr(new Cell(*this, "aoeu")));
-  cells_[0]->membrane_permeabilities_["R"] = 0.0000005;
-  cells_[0]->membrane_permeabilities_["Phosphate"] = 0.1;
-  cells_[0]->membrane_permeabilities_["X"] = 0.001;
-  
-  biomes_.push_back(Biome::Ptr(new Biome(*this, 10, "Alkaline vents")));
-  biomes_[0]->concentrations_["Phosphate"] = 0.01;
-  biomes_[0]->concentrations_["R"] = 0;
-  biomes_[0]->concentrations_["X"] = 10;
-  
-  cells_[0]->setCytosolContentsByConcentrations(biomes_[0]->concentrations_);
-  cells_[0]->cytosol_contents_["ADP"] = 1e6;
-  cells_[0]->cytosol_contents_["ATP Synthase"] = 1e4;
-  cells_[0]->cytosol_contents_["ATP Consumer"] = 1e3;
-
-  // cout << str() << endl;
-}
 
 size_t Prokaryotic::moleculeIdx(const std::string& name) const
 {
@@ -897,6 +896,11 @@ void Prokaryotic::addMoleculeType(MoleculeType::Ptr mt)
   molecule_map_[mt->name_] = mt;
 }
 
+void Prokaryotic::addMoleculeType(const YAML::Node& yaml)
+{
+  addMoleculeType(MoleculeType::Ptr(new MoleculeType(*this, yaml)));
+}
+
 
 std::vector<MoleculeType::ConstPtr> Prokaryotic::moleculeTypes() const
 {
@@ -913,39 +917,27 @@ void Prokaryotic::tick()
     cell->tick(*biomes_[0]);
 }
 
-void Prokaryotic::runTests()
+void Prokaryotic::applyConfig(const std::string& path)
 {
-  // http://book.bionumbers.org/what-are-the-concentrations-of-free-metabolites-in-cells/
-  // "rule of thumb that a concentration of 1 nM corresponds to roughly one copy of the molecule of interest per E. coli cell.
-  // Hence, 100 mM means that there are roughly 10^8 copies of glutamate in each bacterium."
-  MoleculeVals cytosol_contents(*this);
-  cytosol_contents[0] = 1e8;
-  cytosol_contents[1] = 1;
-  double um3 = 1.0;
-  MoleculeVals concentrations = Cell::cytosolConcentrations(*this, cytosol_contents, um3);
-  cout << "Counts: " << endl;
-  cout << cytosol_contents.str("  ") << endl;
-  cout << "Concentrations: " << endl;
-  cout << concentrations.str("  ") << endl;
-
-  cout << "Round trip test" << endl;
-  MoleculeVals contents2 = Cell::cytosolContents(*this, concentrations, um3);
-  cout << "Counts: " << endl;
-  cout << contents2.str("  ") << endl;
-
-  //double half_life_hours = std::numeric_limits<double>::max();
-  double half_life_hours = 1.0;
-  double p_denature = probabilityPerSecond(half_life_hours);
-  cout << "half_life_hours: " << half_life_hours << endl;
-  cout << "p_denature per tick: " << p_denature << endl;
-
-  double population = 1.0;
-  int num_ticks = 0;
-  for (int i = 0; i < int(half_life_hours * 60 * 60); ++i) {
-    population *= (1.0 - p_denature);
-    num_ticks += 1;
-  }
-  cout << "After " << num_ticks << " ticks, population is now " << population << endl;
+  applyConfig(YAML::LoadFile(path));
 }
 
+void Prokaryotic::addReactionType(const YAML::Node& yaml)
+{
+  addReactionType(ReactionType::Ptr(new ReactionType(*this, yaml)));
+}
 
+void Prokaryotic::addBiome(const YAML::Node& yaml)
+{
+  addBiome(Biome::Ptr(new Biome(*this, yaml)));
+}
+
+void Prokaryotic::applyConfig(const YAML::Node& yaml)
+{
+  for (const YAML::Node& mol : yaml["MoleculeTable"])
+    addMoleculeType(mol);
+  for (const YAML::Node& rxn : yaml["ReactionTable"])
+    addReactionType(rxn);
+  for (const YAML::Node& biome : yaml["BiomeTable"])
+    addBiome(biome);
+}
