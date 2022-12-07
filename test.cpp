@@ -359,7 +359,7 @@ TEST_CASE("DNAIf")
   }
 }
 
-TEST_CASE("Protein synthesis rate as a function of num amino acids")
+TEST_CASE("Protein synthesis basics")
 {
   Prokaryotic pro;
 
@@ -394,28 +394,49 @@ TEST_CASE("Protein synthesis rate as a function of num amino acids")
                                                                       "then:\n"
                                                                       "  - Ribosome = 0.0"))));
 
-  for (int i = 0; i < 10; ++i) {  
-    pro.tick();
-    // With equal transcription factors (the default), confirm that 2*num_amino_acids_ means 1/2 the production rate.
-    // Allow 5% error.
-    cout << "cytosol_contents_" << endl << cell->cytosol_contents_.str("  ") << endl;
-    //cout << "transcription_factors_" << endl << cell->dna_->transcription_factors_.str("  ") << endl;
-    cout << "ribosome_assignments_" << endl << cell->dna_->ribosome_assignments_.str("  ") << endl;
-    CHECK(2*cell->cytosol_contents_["Protein 2X"] / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
-  }
+  SUBCASE("Protein synthesis rate as a function of num amino acids")
+  {
+    for (int i = 0; i < 10; ++i) {  
+      pro.tick();
+      // With equal transcription factors (the default), confirm that 2*num_amino_acids_ means 1/2 the production rate.
+      // Allow 5% error.
+      cout << "cytosol_contents_" << endl << cell->cytosol_contents_.str("  ") << endl;
+      cout << "ribosome_assignments_" << endl << cell->dna_->ribosome_assignments_.str("  ") << endl;
+      CHECK(2*cell->cytosol_contents_["Protein 2X"] / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
+    }
   
-  for (int i = 0; i < 100; ++i) {
-    pro.tick();
-    // cout << "------" << endl;
-    // cout << cell->str() << endl;
-    // cout << "concentrations: " << endl << cell->cytosolConcentrations().str("  ") << endl;
-    //cin.ignore();
-  }
-  cout << cell->str() << endl;
-  cout << "concentrations: " << endl << cell->cytosolConcentrations().str("  ") << endl;
-  CHECK(2*cell->cytosol_contents_["Protein 2X"] / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
+    for (int i = 0; i < 100; ++i) {
+      pro.tick();
+    }
+    cout << cell->str() << endl;
+    cout << "concentrations: " << endl << cell->cytosolConcentrations().str("  ") << endl;
+    CHECK(2*cell->cytosol_contents_["Protein 2X"] / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
 
-  CHECK(cell->cytosol_contents_["Ribosome"] == 2e4);
+    CHECK(cell->cytosol_contents_["Ribosome"] == 2e4);
+  }
+
+  SUBCASE("Protein synthesis rate as a function of num ribosomes")
+  {
+    // Now we're only going to make X.
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
+                                                                        "then:\n"
+                                                                        "  - Protein 2X = 0.0"))));
+    
+    // Now confirm that doubling the num ribosomes doubles the protein creation rate
+    // when there are infinite resources available.
+    int num_rib = 1000;
+    //cell->cytosol_contents_.vals_.setZero();
+    cell->cytosol_contents_["Ribosome"] = num_rib;  
+    for (int i = 0; i < 100; ++i)
+      pro.tick();
+    int num_proteins = cell->cytosol_contents_["Protein X"];
+
+    cell->cytosol_contents_.vals_.setZero();
+    cell->cytosol_contents_["Ribosome"] = 2 * num_rib;  // double the num ribosomes.
+    for (int i = 0; i < 100; ++i)
+      pro.tick();
+    CHECK(2*num_proteins / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
+  }
 }
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.
