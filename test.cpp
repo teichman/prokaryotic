@@ -362,9 +362,11 @@ TEST_CASE("DNAIf")
 TEST_CASE("Protein synthesis rate as a function of num amino acids")
 {
   Prokaryotic pro;
-  
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein X", "", 0, 100)));
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein 2X", "", 0, 200)));
+
+  // For very big proteins, it's expected that things will not be close enough to a 2x factor.
+  // That's OK.
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein X", "", 0, 1000)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein 2X", "", 0, 2000)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Amino acids", "", 0)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 0, 150000)));  // Really big so they don't really get produced
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 0)));

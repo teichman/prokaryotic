@@ -598,11 +598,13 @@ void DNA::tick(Cell& cell)
   for (int i = 0; i < ribosome_assignment_deltas.vals_.size(); ++i) {
     if (ribosome_assignment_deltas.vals_[i] > 0) {
       assert(pro_.molecule(i)->num_amino_acids_ > 0);
-      ribosome_assignments_.vals_[i] += floor(ribosome_assignment_deltas.vals_[i] * num_free_ribosomes);
+      ribosome_assignments_.vals_[i] += int(ribosome_assignment_deltas.vals_[i] * num_free_ribosomes);
     }
   }
   assert((ribosome_assignments_.vals_ >= 0).all());
-  assert(fabs(ribosome_assignments_.vals_.sum() - cell.cytosol_contents_["Ribosome"]) < 1e-3);
+  // All ribosomes should be assigned at this point.
+  // Rounding errors can make us be slightly off though.
+  assert(fabs(ribosome_assignments_.vals_.sum() - cell.cytosol_contents_["Ribosome"]) < 1.0 + 1e-3);
 
   // Get random ordering to use for the synthesis reactions.
   static vector<int> random_indices;
