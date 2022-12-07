@@ -135,6 +135,7 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
   // update cell.cytosol_counts_
   assert((inputs_.vals_ >= 0.0).all());
   assert((outputs_.vals_ >= 0.0).all());
+  //cout << "Reaction running with rate " << rate << " and num_protein_copies " << num_protein_copies << endl;
   cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
   cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
 
@@ -577,6 +578,7 @@ void DNA::tick(Cell& cell)
     ntfs.vals_ /= ntfs.vals_.sum();
 
   // Assign free ribosomes.
+  // Eventually: This should only allow a maximum of n ribosomes on any one gene.  (I guess that value grows with num AAs?)
   // transcription_factors_ defines the target distribution of ribosomes, not the distribution that free ribosomes will be assigned to.
   // (this is a big difference after several ticks)
   // Free ribosomes are assigned according to the normalized distribution of deltas.
@@ -593,18 +595,21 @@ void DNA::tick(Cell& cell)
     }
   }
   assert((ribosome_assignment_deltas.vals_ >= 0).all());
-  if (ribosome_assignment_deltas.vals_.sum() > 1e-6) {
-    ribosome_assignment_deltas.vals_ /= ribosome_assignment_deltas.vals_.sum();
-    assert(fabs(ribosome_assignment_deltas.vals_.sum() - 1.0) < 1e-6);
-  
-    for (int i = 0; i < ribosome_assignment_deltas.vals_.size(); ++i) {
-      if (ribosome_assignment_deltas.vals_[i] > 0) {
-        assert(pro_.molecule(i)->num_amino_acids_ > 0);
-        ribosome_assignments_.vals_[i] += int(ribosome_assignment_deltas.vals_[i] * num_free_ribosomes);
-      }
-    }
-    assert((ribosome_assignments_.vals_ >= 0).all());
-    // All ribosomes should be assigned at this point.
+
+  // If we have enough free ribosomes to meet the target assignments, just do that.
+  if (num_free_ribosomes >= ribosome_assignment_deltas.vals_.sum())
+    ribosome_assignments_.vals_ += ribosome_assignment_deltas.vals_;
+  // Otherwise, prorate evenly.
+  else {
+    double multiplier = num_free_ribosomes * ribosome_assignment_deltas.vals_.sum();
+    ribosome_assignments_.vals_ += ribosome_assignment_deltas.vals_ * multiplier;
+  }
+  assert((ribosome_assignments_.vals_ >= 0).all());
+  // It is not the case that all ribosomes will be assigned.  If TFs sum to <1, by design we will not assign all ribosomes.
+  // However if TFs sum to >= 1, then all ribosomes should be assigned at this point in the code.
+  // Eventually: There should be a limit to how many ribosomes can work on one gene, like maybe 1 ribosome per 20 AAs.
+  // (times number of gene copies) 
+  if (fabs(ntfs.vals_.sum() - 1.0) < 1e-3) {
     // Rounding errors can make us be slightly off though.
     assert(fabs(ribosome_assignments_.vals_.sum() - cell.cytosol_contents_["Ribosome"]) < 1.0 + 1e-3);
   }

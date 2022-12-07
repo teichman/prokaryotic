@@ -359,6 +359,60 @@ TEST_CASE("DNAIf")
   }
 }
 
+TEST_CASE("Transcription factors and ribosome assignment")
+{
+  Prokaryotic pro;
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "X", "", 0, 10000)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Y", "", 0, 10000)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Amino acids", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 0, 15000)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 0)));
+
+  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+  pro.biomes_.push_back(biome);
+  biome->concentrations_["Amino acids"] = 200;
+  biome->concentrations_["ATP"] = 200;
+  
+  Cell::Ptr cell(new Cell(pro, "cell"));
+  pro.cells_.push_back(cell);
+  // AAs and ATP come in through the membrane very fast.  ADP leaves very fast.
+  cell->membrane_permeabilities_["Amino acids"] = 1.0;  
+  cell->membrane_permeabilities_["ATP"] = 1.0;
+  cell->membrane_permeabilities_["ADP"] = 1.0;
+  
+  // Start off with some ribosomes
+  cell->cytosol_contents_["Ribosome"] = 1000;
+
+  // Set the rules: Don't make ribosomes, but do allocate ribosomes equally to X and Y.
+  cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
+                                                                      "then:\n"
+                                                                      "  - Ribosome = 0.0\n"
+                                                                      "  - X = 1.0\n"
+                                                                      "  - Y = 1.0"))));
+
+  pro.tick();
+  CHECK(cell->dna_->transcription_factors_["X"] == 1);
+  CHECK(cell->dna_->transcription_factors_["Y"] == 1);
+  CHECK(cell->dna_->transcription_factors_.vals_.sum() == 2);
+
+  // As the num_amino_acids goes up, we get closer to the exact answer.  This is bc the num
+  // ribosomes assigned is decremented by the number of proteins that get finished this tick.
+  // (We don't actually get to see the ribosome assignment at time of synthesis, just after
+  // the synthesis is complete and ribosomes have been freed.)
+  // This is why the num_amino_acids for X and Y is so large in this test.
+  CHECK(cell->dna_->ribosome_assignments_["X"] == doctest::Approx(500).epsilon(0.03));
+  CHECK(cell->dna_->ribosome_assignments_["Y"] == doctest::Approx(500).epsilon(0.03));
+  CHECK(cell->dna_->ribosome_assignments_.vals_.sum() == doctest::Approx(1000).epsilon(0.03));
+
+  for (int i = 0; i < 1000; ++i)
+      pro.tick();
+  CHECK(cell->dna_->ribosome_assignments_["X"] == doctest::Approx(500).epsilon(0.03));
+  CHECK(cell->dna_->ribosome_assignments_["Y"] == doctest::Approx(500).epsilon(0.03));
+  CHECK(cell->dna_->ribosome_assignments_.vals_.sum() == doctest::Approx(1000).epsilon(0.03));
+}
+
 TEST_CASE("Protein synthesis basics")
 {
   Prokaryotic pro;
@@ -466,12 +520,64 @@ TEST_CASE("Protein synthesis basics")
 
     // Amino acids flood the cell.  We should now be making Protein X, and after a while hit the limit that we said we're aiming for.
     cell->membrane_permeabilities_["Amino acids"] = 1.0;
-    for (int i = 0; i < 1000; ++i)
+    for (int i = 0; i < 1000; ++i) {
       pro.tick();
+      if (i > 990) {
+        cout << "iter " << i << endl;
+        cout << cell->str("    ") << endl;
+      }
+    }
 
     cout << cell->str("  ") << endl;
-    CHECK(cell->cytosol_contents_["Protein X"] == doctest::Approx(10000).epsilon(0.01));
+    int num_protein_x = cell->cytosol_contents_["Protein X"];
+    // We need a wide threshold for error here because sometimes we have just gone below the threshold and engaged a ton of
+    // ribosomes to make X.  Then it takes a while for those proteins to degrade.
+    CHECK(num_protein_x == doctest::Approx(10000).epsilon(0.05));
+
+    // Shut off production of that protein.
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
+                                                                        "then:\n"
+                                                                        "  - Protein X = 0.0"))));
+    
+    // Run for 0.5 hours.  Did the half life calculation work?
+    for (int i = 0; i < 0.5 * 60 * 60; ++i)
+      pro.tick();
+
+    CHECK(cell->cytosol_contents_["Protein X"] == doctest::Approx(num_protein_x / 2).epsilon(0.03));
+
+    // Turn it back on.
+    cell->dna_->dna_ifs_.pop_back();
+    for (int i = 0; i < 100; ++i)
+      pro.tick();    
+    CHECK(cell->cytosol_contents_["Protein X"] == doctest::Approx(10000).epsilon(0.03));    
   }
+
+  SUBCASE("Protein synthesis rate when AA concentration equals KM")
+  {
+    cell->cytosol_contents_["Ribosome"] = 1000;
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
+                                                                        "then:\n"
+                                                                        "  - Protein X = 0.1\n"
+                                                                        "  - Protein 2X = 0"))));
+    
+    protein_x->half_life_hours_ = std::numeric_limits<double>::max();
+    biome->concentrations_["Amino acids"] = 60;
+    int num_ticks = 100;
+    for (int i = 0; i < num_ticks; ++i)
+      pro.tick();
+
+    cout << "transcription_factors_" << endl << cell->dna_->transcription_factors_.str("  ") << endl;
+    cout << "ribosome_assignments_" << endl << cell->dna_->ribosome_assignments_.str("  ") << endl;
+    cout << "num ribosomes: " << cell->cytosol_contents_["Ribosome"] << endl;
+    
+    // 20 bc that's what kcat_ is set to for protein synthesis reactions right now.
+    // 0.1 bc of transcription factor set above.
+    // 0.5 bc of the setting of AA concentration to KM.
+    // divide by 1000 bc that's the length of the protein in AAs.
+    double expected_num = num_ticks * 0.5 * 20 * 0.1 * cell->cytosol_contents_["Ribosome"] / 1000;
+    CHECK(cell->cytosol_contents_["Protein X"] == doctest::Approx(expected_num).epsilon(0.03));
+  }
+
 }
 
 
@@ -492,3 +598,4 @@ TEST_CASE("Protein synthesis basics")
 // TEST_CASE()
 // {
 // }
+

@@ -57,6 +57,8 @@ BiomeTable:
 # This is pretty janky but I guess will do for now.
 # Eventually this shouldn't be YAML, just a small DSL that is compiled into C++ objects representing the expressions.
 # if, else, =, +=, <, >.
+# Also it's weird to use "X" for the concentration of something in the if statement, and then "X" for the TF target.
+# They're totally different things.
 DNA:
   - if: ATP Synthase < 300
     then:
