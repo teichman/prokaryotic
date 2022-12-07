@@ -5,7 +5,15 @@
 using namespace std;
 using Eigen::ArrayXd, Eigen::VectorXd;
 
+void printHeader()
+{
+  cout << "====================================================================================================" << endl;
+  cout << "====================================================================================================" << endl;
+  cout << "====================================================================================================" << endl;
+}
+
 TEST_CASE("Cytosol concentrations / contents round trip") {
+  printHeader();
   Prokaryotic pro;
   //pro.initializeHardcoded();
   pro.initialize(YAML::LoadFile("config.yaml"));
@@ -32,6 +40,7 @@ TEST_CASE("Cytosol concentrations / contents round trip") {
 
 TEST_CASE("Half life")
 {
+  printHeader();
   double half_life_hours = 1.0;
   double p_denature = probabilityPerSecond(half_life_hours);
   cout << "half_life_hours: " << half_life_hours << endl;
@@ -49,6 +58,7 @@ TEST_CASE("Half life")
 
 TEST_CASE("Membrane permeability")
 {
+  printHeader();
   Prokaryotic pro;
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "P", 94.97)));
   
@@ -90,6 +100,7 @@ TEST_CASE("Membrane permeability")
 
 TEST_CASE("Ribosome")
 {
+  printHeader();
   Prokaryotic pro;
   double half_life_hours = 0.5;
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: ATP\n"
@@ -163,6 +174,7 @@ TEST_CASE("Ribosome")
 
 TEST_CASE("YAML")
 {
+  printHeader();
   Prokaryotic pro;
 
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, YAML::Load("name: ATP\n"
@@ -231,6 +243,7 @@ TEST_CASE("YAML")
 
 TEST_CASE("DNAIf")
 {
+  printHeader();
   Prokaryotic pro;
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 1, 1)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", "", 1, 1)));
@@ -361,6 +374,7 @@ TEST_CASE("DNAIf")
 
 TEST_CASE("Transcription factors and ribosome assignment")
 {
+  printHeader();
   Prokaryotic pro;
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "X", "", 0, 10000)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Y", "", 0, 10000)));
@@ -415,6 +429,7 @@ TEST_CASE("Transcription factors and ribosome assignment")
 
 TEST_CASE("Protein synthesis basics")
 {
+  printHeader();
   Prokaryotic pro;
 
   // For very big proteins, it's expected that things will not be close enough to a 2x factor.
@@ -580,6 +595,101 @@ TEST_CASE("Protein synthesis basics")
 
 }
 
+TEST_CASE("Proteasome")
+{
+  printHeader();
+  Prokaryotic pro;
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "X", "", 0, 1000, 0.1)));  // very short half life
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Proteasome", "", 0, 1000)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Amino acids", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 0, 150000)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 0)));
+
+  // Provide infinite AAs and ATP.
+  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+  pro.biomes_.push_back(biome);
+  biome->concentrations_["Amino acids"] = 200;
+  biome->concentrations_["ATP"] = 200;
+
+  Cell::Ptr cell(new Cell(pro, "cell"));
+  pro.cells_.push_back(cell);
+  // AAs and ATP come in through the membrane very fast.  ADP leaves very fast.
+  cell->membrane_permeabilities_["Amino acids"] = 1.0;  
+  cell->membrane_permeabilities_["ATP"] = 1.0;
+  cell->membrane_permeabilities_["ADP"] = 1.0;
+
+
+  SUBCASE("Rate of clearing denatured proteins")
+  {
+    double num_prot = 10000;
+    cell->cytosol_contents_["Proteasome"] = num_prot;
+    // Give us tons of denatured X and ATP, so we're limited only by kcat of the proteasome.
+    // I don't really know what the KM should be for denatured proteins, so I set it to 0.5 on a whim.
+    // To run at close to kcat, we need a concentration at least 3-4x of 0.5mM, then.
+    // 1mM for a 1fL (1um3) cell is 600k molecules.  (6e23 * 1e-3 * 1e-15)
+    // So let's just set it to 10x that.
+    double orig_num_denatured_x = 6e6;
+    cell->cytosol_contents_denatured_["X"] = orig_num_denatured_x;
+    cell->cytosol_contents_["ATP"] = 6e6;
+    cout << "concentrations: " << endl << countsToConcentrations(cell->cytosol_contents_, cell->um3_).str("  ") << endl;
+    cout << "concentrations (denatured): " << endl 
+         << countsToConcentrations(cell->cytosol_contents_denatured_, cell->um3_).str("  ") << endl;
+    
+    pro.tick();
+    double num_digested = orig_num_denatured_x - cell->cytosol_contents_denatured_["X"];
+    cout << num_prot << " proteasomes digested " << num_digested << " denatured copies of protein X (" 
+         << pro.molecule("X")->num_amino_acids_ << "aa) in one tick." << endl;
+    cout << "One proteasome digested " << num_digested / num_prot << " denatured copies of protein X (" 
+         << pro.molecule("X")->num_amino_acids_ << "aa) in one tick." << endl;
+
+    CHECK(num_digested / num_prot == doctest::Approx(0.04).epsilon(0.1));
+  }
+
+  SUBCASE("Bulk clearing of denatured proteins")
+  {
+    // Start off with some ribosomes
+    cell->cytosol_contents_["Ribosome"] = 1e4;
+
+    // Don't make anything except X.
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
+                                                                        "then:\n"
+                                                                        "  - Ribosome = 0.0\n"
+                                                                        "  - Proteasome = 0.0"))));
+
+    // Without proteasomes, we get lots of buildup of denatured X.
+    for (int i = 0; i < 60 * 60; ++i)
+      pro.tick();
+
+    cout << "cytosol_contents_" << endl;
+    cout << cell->cytosol_contents_.str("  ") << endl;
+    cout << "cytosol_contents_denatured_" << endl;
+    cout << cell->cytosol_contents_denatured_.str("  ") << endl;
+
+
+    // Turn on proteasome production by the ribosomes, and turn off production of X.
+    cell->dna_->dna_ifs_.pop_back();
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
+                                                                        "then:\n"
+                                                                        "  - X = 0.0\n"
+                                                                        "  - Ribosome = 0.0\n"
+                                                                        "  - Proteasome = 1.0"))));
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Proteasome > 10000\n"
+                                                                        "then:\n"
+                                                                        "  - Ribosome = 0.0\n"
+                                                                        "  - Proteasome = 0.0"))));
+    for (int i = 0; i < 5*60*60; ++i)
+      pro.tick();
+
+    cout << "After a while has passed, proteasomes should have cleaned up the denatured proteins." << endl;
+    cout << "cytosol_contents_" << endl;
+    cout << cell->cytosol_contents_.str("  ") << endl;
+    cout << "cytosol_contents_denatured_" << endl;
+    cout << cell->cytosol_contents_denatured_.str("  ") << endl;
+    CHECK(cell->cytosol_contents_denatured_.vals_.sum() == doctest::Approx(0));
+  }
+}
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.
 // bc of the biome <> cell permeability math.

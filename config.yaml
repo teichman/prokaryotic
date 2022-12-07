@@ -1,3 +1,5 @@
+# TODO: Protein half-lives are typically 0.25 - 2 hours, which a bunch much longer than 3 hours.
+# See http://book.bionumbers.org/how-fast-do-rnas-and-proteins-degrade/
 
 MoleculeTable:
   - name: Amino acids
@@ -31,6 +33,12 @@ MoleculeTable:
     symbol: factory
     daltons: 2.7e6
     num-amino-acids: 7459
+  - name: Proteasome
+    symbol: aoeu
+    daltons: 2.4e6  # http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/
+    num-amino-acids: 2e4  # figure 2 of http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/ 
+    half-life-hours: 60  # http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/
+
     
 
 ReactionTable:

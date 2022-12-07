@@ -118,7 +118,8 @@ ReactionType::ReactionType(const Prokaryotic& pro,
 
 void ReactionType::tick(Cell& cell, int num_protein_copies) const
 {
-  assert(num_protein_copies > 0);
+  if (num_protein_copies == 0)
+    return;
   
   // Simplify: Assume that everything follows Michaelis-Menten kinetics, even for the (presumably majority) of reactions
   // that have multiple substrates.
@@ -201,6 +202,108 @@ ReactionType::ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protei
   kcat_ = 20;
 }
 
+ReactionType::ReactionType(const Prokaryotic& pro) :
+  pro_(pro),
+  inputs_(pro),
+  outputs_(pro),
+  kms_(pro)
+{
+}
+
+ProteasomeReactionType::ProteasomeReactionType(const Prokaryotic& pro, size_t target_idx) :
+  ReactionType(pro),
+  target_idx_(target_idx)
+{
+  protein_name_ = "Proteasome";
+  protein_idx_ = pro.moleculeIdx("Proteasome");
+  atp_idx_ = pro.moleculeIdx("ATP");
+  
+  double target_num_aa = pro.molecule(target_idx_)->num_amino_acids_;
+  
+  // http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/
+  // 40 aa/s.
+  // As with protein synthesis reactions, we'll just take the average here.
+  // e.g. if the target protein is 80aa, then on average one proteasome consumes half a target protein per second.
+
+  kcat_ = 40.0;  // This corresponds to the 40 aa/s.
+  
+  inputs_[target_idx_] = 1.0 / target_num_aa;
+  // How much ATP does it take to consume one aa?
+  // It takes 5 ATP to append a single aa in the ribosome.  Maybe it's cheaper than that?
+  inputs_["ATP"] = 2;
+
+  // TODO: What recovery fraction is reasonable?  Dunno.
+  // Surely nature optimizes this to be as high as possible.
+  outputs_["Amino acids"] = 0.9;
+  outputs_["ADP"] = inputs_["ATP"];
+  outputs_["Phosphate"] = inputs_["ATP"];
+
+  
+  // We're aiming for 40 AAs / second.  https://micro.magnet.fsu.edu/cells/ribosomes/ribosomes.html
+  // Normal cellular ATP is 1-10 mM.
+  // Probably for typical cells with 1-10 mM ATP, the ATP concentration is not the limiting factor.
+  // Set the KM for ATP accordingly.  (But wtf do I know?)
+  kms_["ATP"] = 0.5;
+
+  // Ok now this one I really don't know.  At what concentration of denatured protein does the proteasome slow down by half?
+  // Just making a wild guess here.  Maybe it's much higher because it's a protein-protein interaction, so they are both
+  // slowly bumbling around, and less likely to hit than with say ATP which is much smaller and therefore faster moving.
+  kms_[target_idx_] = 0.5;
+}
+
+void ProteasomeReactionType::tick(Cell& cell, int num_protein_copies) const
+{
+  // Outside of this, I think in Cell::tick(), there is a special bit of code that determines how many of each
+  // proteasome bump into which denatured molecule types.  This is probably not correct but we'll probably just
+  // not worry about it for now, or ever.
+  // (It probably should be that it's the concentration of all denatured proteins that matters for reaction rate.)
+
+  if (num_protein_copies <= 0)
+    return;
+  
+  //double conc_den = countsToConcentrations(cell.cytosol_contents_denatured_.vals_.sum(), cell.um3_);
+  double conc_den = countToConcentration(cell.cytosol_contents_denatured_[target_idx_], cell.um3_);
+  double conc_atp = countToConcentration(cell.cytosol_contents_[atp_idx_], cell.um3_);
+
+  // Our inputs are fixed to denatured proteins and ATP, so we'll just do that more explicitly
+  // than the general for loop in ReactionType::tick().
+  double rate_den = rateMM(conc_den, kms_[target_idx_], kcat_);
+  double rate_atp = rateMM(conc_atp, kms_[atp_idx_], kcat_);
+  double rate = std::min(rate_den, rate_atp);
+  assert(rate >= 0);
+  
+  assert((inputs_.vals_ >= 0.0).all());
+  assert((outputs_.vals_ >= 0.0).all());
+
+  //cout << "ProteasomeReactionType::tick running with " << num_protein_copies << " proteasome copies, rate " << rate << endl;
+  
+  // For just the target protein input: Subtract from cytosol_counts_denatured_.
+  double num_denatured_to_remove = inputs_[target_idx_] * rate * num_protein_copies;
+  cell.cytosol_contents_denatured_.vals_[target_idx_] -= num_denatured_to_remove;
+  // cout << "Removed " << num_denatured_to_remove << " denatured proteins." << endl;
+  // For just the ATP input: Subtract from cytosol_contents_.
+  cell.cytosol_contents_.vals_[atp_idx_] -= inputs_[atp_idx_] * rate * num_protein_copies;
+  
+  // All outputs go in to cytosol_counts_, so do the usual update here.
+  cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
+
+  // It's possible for us to accidentally overstep our bounds here and end up making something go negative.
+  // If that happens, print a warning but continue.
+  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
+    if (cell.cytosol_contents_[i] < 0) {
+      cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i]
+           << ".  Clipping it back to zero." << endl;
+      cell.cytosol_contents_.vals_[i] = 0;
+    }
+    if (cell.cytosol_contents_denatured_[i] < 0) {
+      cout << "WARNING: " << pro_.molecule(i)->name_ << " (denatured) went negative, to " << cell.cytosol_contents_denatured_[i]
+           << ".  Clipping it back to zero." << endl;
+      cell.cytosol_contents_denatured_.vals_[i] = 0;
+    }
+  }
+  
+}
+ 
 double rateMM(double substrate_concentration, double km, double kcat)
 {
   assert(substrate_concentration >= 0);
@@ -308,6 +411,13 @@ void MoleculeVals::probabilisticRound()
   }
 }
 
+MoleculeVals MoleculeVals::normalized() const
+{
+  MoleculeVals result(*this);
+  assert(result.vals_.sum() > 0);
+  result.vals_ /= result.vals_.sum();
+  return result;
+}
 
 Biome::Biome(const Prokaryotic& pro, double m3, const std::string& name) :
   pro_(pro),
@@ -341,6 +451,12 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   membrane_permeabilities_(pro_),
   dna_(new DNA(pro_))
 {
+  // some tests don't have Proteasomes defined, so only make these reactions
+  // if that molecule type exists.
+  if (pro_.hasMolecule("Proteasome"))
+    for (size_t i = 0; i < pro_.numMoleculeTypes(); ++i)
+      if (pro_.molecule(i)->num_amino_acids_ > 0)
+        proteasome_reactions_.push_back(ProteasomeReactionType::Ptr(new ProteasomeReactionType(pro_, i)));
 }
 
 std::string Cell::_str() const
@@ -354,17 +470,27 @@ std::string Cell::_str() const
   return oss.str();
 }
 
-MoleculeVals Cell::cytosolConcentrations(const Prokaryotic& pro, MoleculeVals cytosol_contents, double um3)
+MoleculeVals countsToConcentrations(const MoleculeVals& counts, double um3)
 {
   // millimoles = 1e3 * (num / 6e23)
   // liters = um3 * 1e-15, bc um3 is fL.
   // mM = 1e3 * (num / 6e23) / (um3 * 1e-15)
   // mM = 1.67e-06 * num / um3
-  
-  MoleculeVals concentrations(pro);
-  concentrations.vals_ = cytosol_contents.vals_ * (1.67e-6 / um3);
+
+  MoleculeVals concentrations(counts.pro_);
+  concentrations.vals_ = counts.vals_ * (1.67e-6 / um3);
   assert((concentrations.vals_ >= 0.0).all());
   return concentrations;
+}
+
+double countToConcentration(double count, double um3)
+{
+  return count * (1.67e-6 / um3);
+}
+
+MoleculeVals Cell::cytosolConcentrations(const Prokaryotic& pro, MoleculeVals cytosol_contents, double um3)
+{
+  return countsToConcentrations(cytosol_contents, um3);
 }
 
 MoleculeVals Cell::cytosolConcentrations() const
@@ -394,9 +520,8 @@ void Cell::tick(const Biome& biome)
   setCytosolContentsByConcentrations(cytosol_concentrations);
   
   // In-cell reactions.  For now we are assuming all reactions require a protein.
-  for (auto rt : pro_.reaction_types_) {
+  for (auto rt : pro_.reaction_types_)
     rt->tick(*this, cytosol_contents_[rt->protein_idx_]);
-  }
   
   // Apply degredation of molecules.
   // TODO: Have a member of MoleculeType (or, better, ProteinType) that indicates if the protein is denatured or not.
@@ -410,10 +535,23 @@ void Cell::tick(const Biome& biome)
     }
   }
 
+  // Apply proteasome reactions.  I'm skeptical of this method of assigning proteasomes to the different categories of
+  // denatured proteins.  They should probably run at a rate limited by KM on concentration of all denatured proteins,
+  // then statistically remove copies of degraded proteins according to the distribution of cytosol_contents_denatured_.
+  // I guess that's an Eventually: ...
+  if (cytosol_contents_denatured_.vals_.sum() > 0) {
+    MoleculeVals denatured_distribution = cytosol_contents_denatured_.normalized();
+    assert(fabs(denatured_distribution.vals_.sum() - 1) < 1e-6);
+    for (ProteasomeReactionType::ConstPtr prt : proteasome_reactions_) {
+      prt->tick(*this, cytosol_contents_["Proteasome"] * denatured_distribution[prt->target_idx_]);
+    }
+  }
+  
   // Apply "DNA programming"
   dna_->tick(*this);
   
   cytosol_contents_.probabilisticRound();
+  cytosol_contents_denatured_.probabilisticRound();
 }
 
 DNAIf::DNAIf(const Prokaryotic& pro, const YAML::Node& yaml) :
@@ -601,7 +739,7 @@ void DNA::tick(Cell& cell)
     ribosome_assignments_.vals_ += ribosome_assignment_deltas.vals_;
   // Otherwise, prorate evenly.
   else {
-    double multiplier = num_free_ribosomes * ribosome_assignment_deltas.vals_.sum();
+    double multiplier = num_free_ribosomes / ribosome_assignment_deltas.vals_.sum();
     ribosome_assignments_.vals_ += ribosome_assignment_deltas.vals_ * multiplier;
   }
   assert((ribosome_assignments_.vals_ >= 0).all());

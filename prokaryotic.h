@@ -50,6 +50,7 @@ public:
   void round() { vals_ = vals_.round(); }
   void probabilisticRound();
   int size() const { return vals_.size(); }
+  MoleculeVals normalized() const;
   
   std::string _str() const;
 
@@ -77,6 +78,9 @@ double probabilityPerSecond(double half_life_hours)
   double half_life_ticks = half_life_hours * 3600;
   return 1.0 - exp(log(0.5) / half_life_ticks);
 }
+
+MoleculeVals countsToConcentrations(const MoleculeVals& counts, double um3);
+double countToConcentration(double count, double um3);
 
 // Superclass for proteins and small molecules, both of which we will just call "Molecules".
 class MoleculeType : public Printable
@@ -116,19 +120,35 @@ public:
   std::string protein_name_;
   size_t protein_idx_;
 
+  ReactionType(const Prokaryotic& pro);
   ReactionType(const Prokaryotic& pro, const YAML::Node& yaml);
   ReactionType(const Prokaryotic& pro,
                const MoleculeVals& inputs, const MoleculeVals& outputs,
                const MoleculeVals& kms, double kcat);
+  virtual ~ReactionType() {}
   // For ribosomal protein synthesis reactions, we tell it what protein we are synthesizing, and it
   // assigns the inputs_, outputs_, kms_, kcat_, protein_name_, protein_idx_.
   ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protein);  
-  void tick(Cell& cell, int num_protein_copies) const;
+  virtual void tick(Cell& cell, int num_protein_copies) const;
   std::string _str() const;
 
 private:
   void parseHalfFormula(const std::vector<std::string>& tokens, size_t startidx, size_t endidx, MoleculeVals* mvals);
   void parseFormula(const std::string& formula);
+};
+
+// Unfortunately needs special code because they target denatured proteins.
+class ProteasomeReactionType : public ReactionType
+{
+public:
+  typedef std::shared_ptr<const ProteasomeReactionType> ConstPtr;
+  typedef std::shared_ptr<ProteasomeReactionType> Ptr;
+
+  size_t target_idx_;
+  size_t atp_idx_;
+  
+  ProteasomeReactionType(const Prokaryotic& pro, size_t target_idx);
+  void tick(Cell& cell, int num_protein_copies) const;  
 };
 
 class Biome : public Printable
@@ -231,7 +251,8 @@ public:
   MoleculeVals membrane_contents_;
   MoleculeVals membrane_permeabilities_;
   DNA::Ptr dna_;  // non-const so Prokaryotic can make changes to it.
-  
+  std::vector<ProteasomeReactionType::ConstPtr> proteasome_reactions_;
+    
   Cell(const Prokaryotic& pro, const std::string& name);
 
   std::string _str() const;
