@@ -365,7 +365,8 @@ TEST_CASE("Protein synthesis basics")
 
   // For very big proteins, it's expected that things will not be close enough to a 2x factor.
   // That's OK.
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein X", "", 0, 1000)));
+  MoleculeType::Ptr protein_x(new MoleculeType(pro, "Protein X", "", 0, 1000));
+  pro.addMoleculeType(protein_x);
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Protein 2X", "", 0, 2000)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Amino acids", "", 0)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 0, 150000)));  // Really big so they don't really get produced
@@ -417,7 +418,7 @@ TEST_CASE("Protein synthesis basics")
 
   SUBCASE("Protein synthesis rate as a function of num ribosomes")
   {
-    // Now we're only going to make X.
+    // Only make X.
     cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
                                                                         "then:\n"
                                                                         "  - Protein 2X = 0.0"))));
@@ -437,7 +438,42 @@ TEST_CASE("Protein synthesis basics")
       pro.tick();
     CHECK(2*num_proteins / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
   }
+
+  SUBCASE("Protein synthesis balancing out protein denaturing")
+  {
+    // Don't make Protein 2X either.  Now we're just making X.
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
+                                                                        "then:\n"
+                                                                        "  - Protein 2X = 0.0"))));
+    // Turn off Protein X synthesis as soon as we have 10k of them.
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Protein X > 10000\n"
+                                                                        "then:\n"
+                                                                        "  - Protein X = 0.0"))));
+
+    // Make Protein X degrade really fast.
+    protein_x->half_life_hours_ = 0.5;
+
+    // Temporarily make AAs not come in the cell, and ensure we aren't starting with any.
+    cell->membrane_permeabilities_["Amino acids"] = 0.0;
+    REQUIRE(cell->cytosol_contents_["Amino acids"] == 0.0);
+
+    for (int i = 0; i < 100; ++i)
+      pro.tick();
+
+    // Check that we're not leaking and that we haven't made any Protein X, bc we don't have any amino acids.
+    CHECK(cell->cytosol_contents_["Amino acids"] == 0.0);
+    CHECK(cell->cytosol_contents_["Protein X"] == 0.0);
+
+    // Amino acids flood the cell.  We should now be making Protein X, and after a while hit the limit that we said we're aiming for.
+    cell->membrane_permeabilities_["Amino acids"] = 1.0;
+    for (int i = 0; i < 1000; ++i)
+      pro.tick();
+
+    cout << cell->str("  ") << endl;
+    CHECK(cell->cytosol_contents_["Protein X"] == doctest::Approx(10000).epsilon(0.01));
+  }
 }
+
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.
 // bc of the biome <> cell permeability math.

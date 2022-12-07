@@ -593,19 +593,22 @@ void DNA::tick(Cell& cell)
     }
   }
   assert((ribosome_assignment_deltas.vals_ >= 0).all());
-  ribosome_assignment_deltas.vals_ /= ribosome_assignment_deltas.vals_.sum();
-
-  for (int i = 0; i < ribosome_assignment_deltas.vals_.size(); ++i) {
-    if (ribosome_assignment_deltas.vals_[i] > 0) {
-      assert(pro_.molecule(i)->num_amino_acids_ > 0);
-      ribosome_assignments_.vals_[i] += int(ribosome_assignment_deltas.vals_[i] * num_free_ribosomes);
+  if (ribosome_assignment_deltas.vals_.sum() > 1e-6) {
+    ribosome_assignment_deltas.vals_ /= ribosome_assignment_deltas.vals_.sum();
+    assert(fabs(ribosome_assignment_deltas.vals_.sum() - 1.0) < 1e-6);
+  
+    for (int i = 0; i < ribosome_assignment_deltas.vals_.size(); ++i) {
+      if (ribosome_assignment_deltas.vals_[i] > 0) {
+        assert(pro_.molecule(i)->num_amino_acids_ > 0);
+        ribosome_assignments_.vals_[i] += int(ribosome_assignment_deltas.vals_[i] * num_free_ribosomes);
+      }
     }
+    assert((ribosome_assignments_.vals_ >= 0).all());
+    // All ribosomes should be assigned at this point.
+    // Rounding errors can make us be slightly off though.
+    assert(fabs(ribosome_assignments_.vals_.sum() - cell.cytosol_contents_["Ribosome"]) < 1.0 + 1e-3);
   }
-  assert((ribosome_assignments_.vals_ >= 0).all());
-  // All ribosomes should be assigned at this point.
-  // Rounding errors can make us be slightly off though.
-  assert(fabs(ribosome_assignments_.vals_.sum() - cell.cytosol_contents_["Ribosome"]) < 1.0 + 1e-3);
-
+  
   // Get random ordering to use for the synthesis reactions.
   static vector<int> random_indices;
   static std::random_device rd;
