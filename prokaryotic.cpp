@@ -140,14 +140,14 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
   cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
   cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
 
-  // It's possible for us to accidentally overstep our bounds here and end up making something go negative.
-  // If that happens, print a warning but continue.
+  // It's not unlikely that tick() is not granular enough and we end up making something negative.
+  // In that case, just clamp it back to zero.
   for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
-    if (cell.cytosol_contents_[i] < 0) {
+    if (cell.cytosol_contents_[i] < -1e3) {
       cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i]
-           << ".  Clipping it back to zero." << endl;
-      cell.cytosol_contents_.vals_[i] = 0;
+           << ".  This seems too big." << endl;
     }
+    cell.cytosol_contents_.vals_[i] = std::max<double>(0, cell.cytosol_contents_.vals_[i]);
   }
   
   // Should only need one of these at the end of Cell::tick()
@@ -290,18 +290,18 @@ void ProteasomeReactionType::tick(Cell& cell, int num_protein_copies) const
   // It's possible for us to accidentally overstep our bounds here and end up making something go negative.
   // If that happens, print a warning but continue.
   for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
-    if (cell.cytosol_contents_[i] < 0) {
+    if (cell.cytosol_contents_[i] < -1e3) {
       cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i]
-           << ".  Clipping it back to zero." << endl;
-      cell.cytosol_contents_.vals_[i] = 0;
+           << ".  This seems too big." << endl;
     }
-    if (cell.cytosol_contents_denatured_[i] < 0) {
-      cout << "WARNING: " << pro_.molecule(i)->name_ << " (denatured) went negative, to " << cell.cytosol_contents_denatured_[i]
-           << ".  Clipping it back to zero." << endl;
-      cell.cytosol_contents_denatured_.vals_[i] = 0;
+    cell.cytosol_contents_.vals_[i] = std::max<double>(0, cell.cytosol_contents_.vals_[i]);
+    
+    if (cell.cytosol_contents_denatured_[i] < -1e3) {
+      cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_denatured_[i]
+           << ".  This seems too big." << endl;
     }
-  }
-  
+    cell.cytosol_contents_denatured_.vals_[i] = std::max<double>(0, cell.cytosol_contents_denatured_.vals_[i]);
+  }  
 }
  
 double rateMM(double substrate_concentration, double km, double kcat)
@@ -705,6 +705,100 @@ void DNA::setDefaultTranscriptionFactors()
       transcription_factors_.vals_[i] = 1;
 }
 
+void DNA::assignRibosomes(Cell* cell)
+{
+  // Compute how many net ribosomes have been lost to degradation (min zero).
+  double net_lost_ribosomes = 0;
+  double num_rib = floor(cell->cytosol_contents_["Ribosome"]);
+  
+  static double last_num_rib = -1;
+  if (last_num_rib > -1) {
+    net_lost_ribosomes = std::max<double>(0, last_num_rib - num_rib);
+  }
+  last_num_rib = floor(cell->cytosol_contents_["Ribosome"]);
+
+  // If we have lost ribosomes, decrement the ribosome assignments accordingly.
+  if (net_lost_ribosomes > 0 && ribosome_assignments_.vals_.sum() > 0) {
+    ArrayXd dist = ribosome_assignments_.normalized().vals_;
+    dist /= dist.sum();
+    dist *= net_lost_ribosomes;
+    ribosome_assignments_.vals_ -= dist;
+  }
+
+  
+  // Every tick, transcription factors are set to their defaults, then user code is executed to make changes.
+  setDefaultTranscriptionFactors();
+  for (auto dnaif : dna_ifs_) {
+    dnaif->execute(cell);
+  }
+
+  // Check for funny business.
+  for (int i = 0; i < transcription_factors_.vals_.size(); ++i)
+    if (transcription_factors_.vals_[i] > 0)
+      assert(pro_.molecule(i)->num_amino_acids_ > 0);
+  
+  // Transcription factor normalization:
+  //   * If there are negative numbers, replace them with zeros.
+  //   * If the transcription factors sum to greater than one, make them sum to one.
+  //   * Otherwise leave them alone.
+
+  MoleculeVals ntfs(transcription_factors_);
+  ArrayXd& tf = ntfs.vals_;
+  // User can easily specify DNA rules that cause these numbers to go negative.
+  // Just clip them to zero.
+  tf = tf.max(ArrayXd::Zero(tf.size()));  
+  assert((ntfs.vals_ >= 0).all());
+
+  // Many mRNA copies for one gene can be floating around in the cell, and one ribosome takes up the space of like 15-20 bases
+  // on that strand.  For now we are just subsuming all this complexity into "over what distribution of proteins would you
+  // like your ribosomes assigned".  Eventually it may be nice to simulate num strands of mRNA floating around, and do
+  // a reaction on that between ribosomes and mRNA.
+  // Anyway, what this means is: There is essentially no limit to the number of ribosomes that can be assigned to a particular gene.
+  // Previously that logic was here, and now instead there is just this long note.
+
+  ArrayXd& ra = ribosome_assignments_.vals_;
+  
+  // Normalize the distribution if greater than 1.
+  if (tf.sum() > 1.0)
+    tf /= tf.sum();
+
+  // Assign ribosomes.
+  assert(tf.size() == synthesis_reactions_.size());
+  int num_free_ribosomes = num_rib - ra.floor().sum();
+  ArrayXd target_ra = tf * num_rib;
+  
+  // cout << "============================================================" << endl;
+  // cout << "Allocating " << num_free_ribosomes << " free ribosomes" << endl;
+  // cout << "Ribosome half life: " << pro_.molecule("Ribosome")->half_life_hours_ << endl;
+  // cout << "transcription_factors_: " << transcription_factors_.vals_.transpose() << endl;
+  // cout << "tf: " << tf.transpose() << endl;
+  // cout << "target_ra: " << target_ra.transpose() << endl;
+  // cout << "ribosome_assignments_: " << ribosome_assignments_.vals_.transpose() << endl;
+
+  // It's possible for the delta in ribosomes to be negative, in part because ribosomes can degrade,
+  // and in part because of DNA programming that says to stop making a certain thing.
+  ArrayXd delta = target_ra - ra;
+  
+  // cout << "delta: " << delta.transpose() << endl;
+  // cout << "ra before adding delta: " << ra.transpose() << endl;
+  if (delta.sum() > 0) {
+    if (delta.sum() < num_free_ribosomes)
+      ra += delta.floor();
+    else
+      ra += (delta * (num_free_ribosomes / delta.sum())).floor();
+  }
+  ra = ra.max(ArrayXd::Zero(ra.size())).floor();
+
+  num_free_ribosomes = floor(num_rib - ra.sum());
+  // cout << "num_rib: " << num_rib << endl;
+  // cout << "cytosol_contents_[Ribosome]: " << cell->cytosol_contents_["Ribosome"] << endl;
+  // cout << "ra: " << ra.transpose() << endl;
+  // cout << "num_free_ribosomes: " << num_free_ribosomes << endl;
+  PASSERT(num_free_ribosomes >= 0, fmt::format("num_free_ribosomes {}", num_free_ribosomes));
+
+  assert(!ra.isNaN().any());
+}
+
 void DNA::tick(Cell& cell)
 {
   // In testing, sometimes we don't have ribosomes.
@@ -712,81 +806,8 @@ void DNA::tick(Cell& cell)
   if (!cell.cytosol_contents_.hasMolecule("Ribosome"))
     return;
 
-  // Every tick, transcription factors are set to their defaults, then user code is executed to make changes.
-  setDefaultTranscriptionFactors();
-  for (auto dnaif : dna_ifs_) {
-    dnaif->execute(&cell);
-  }
-  
-  // if (cell.cytosol_contents_.hasMolecule("ATP Synthase") && cell.cytosol_contents_["ATP Synthase"] < 200) {
-  //   // Run the reaction that generates ATP Synthase.
-  //   // It's a reaction run by Ribosomes (just like other proteins) that depends on concentration of substrates (building blocks,
-  //   // Approx 5 ATP for each amino acid in the sequence.
-  //   // 200 amino acids per minute made by ribosomes.  This is ~3 / second.  Maybe this is how we set kcat for the ribosome, and then
-  //   // the synthesis rate drops if there aren't enough building blocks around.  Not sure how to set the KM values though.
-  //   // Typically 100-600 amino acids per protein.  (Some are crazy long, but maybe that is just eukaryotes..)
-  //   // Probably we want to ignore the fact that it's 3aa / second and just absorb that into kcat though.
-  //   // ReactionType for protein synthesis is just a ReactionType stored in DNA class (which includes ribosome count) with kcat
-  //   // set by num_aa of the protein, and num_protein_copies is determined by the number of ribosomes assigned to this protein.
-  //   // That in turn is set by a distribution over genes that the user can set, also in the DNA programming - you can set promotion
-  //   // factors in R^+, one for each gene, and ribosomes get assigned to genes according to a normalized distribution over genes.
-  //   transcription_factors_["ATP Synthase"] = 1.0;
-  // }
-
-  // Transcription factor normalization:
-  //   * If there are negative numbers, replace them with zeros.
-  //   * If the transcription factors sum to greater than one, make them sum to one.
-  //   * Otherwise leave them alone.
-
-  // Compute normalized transcription factors. (User specifies an unnormalized distribution over genes.)
-  MoleculeVals ntfs(pro_);  
-  ntfs.vals_ = transcription_factors_.vals_.max(ArrayXd::Zero(transcription_factors_.vals_.size()));
-  if (ntfs.vals_.sum() > 1.0)
-    ntfs.vals_ /= ntfs.vals_.sum();
-
-  // Assign free ribosomes.
-  // Eventually: This should only allow a maximum of n ribosomes on any one gene.  (I guess that value grows with num AAs?)
-  // transcription_factors_ defines the target distribution of ribosomes, not the distribution that free ribosomes will be assigned to.
-  // (this is a big difference after several ticks)
-  // Free ribosomes are assigned according to the normalized distribution of deltas.
-  assert(ntfs.vals_.size() == synthesis_reactions_.size());
-  int num_free_ribosomes = cell.cytosol_contents_["Ribosome"] - ribosome_assignments_.vals_.sum();
-  // PASSERT(num_free_ribosomes >= -1, fmt::format("num_free_ribosomes: {}", num_free_ribosomes));
-  num_free_ribosomes = std::max(0, num_free_ribosomes);
-  
-  MoleculeVals ribosome_assignment_deltas(pro_);
-  for (int i = 0; i < ntfs.vals_.size(); ++i) {
-    if (ntfs.vals_[i] > 0) {
-      assert(pro_.molecule(i)->num_amino_acids_ > 0);
-      //ribosome_assignments_.vals_[i] += floor(ntfs.vals_[i] * num_free_ribosomes);
-      double target_num_ribosomes = ntfs.vals_[i] * cell.cytosol_contents_["Ribosome"];
-      ribosome_assignment_deltas.vals_[i] = std::max<double>(0, target_num_ribosomes - ribosome_assignments_.vals_[i]);
-    }
-  }
-  assert((ribosome_assignment_deltas.vals_ >= 0).all());
-
-  // If we have enough free ribosomes to meet the target assignments, just do that.
-  if (num_free_ribosomes >= ribosome_assignment_deltas.vals_.sum())
-    ribosome_assignments_.vals_ += ribosome_assignment_deltas.vals_;
-  // Otherwise, prorate evenly.
-  else {
-    double multiplier = num_free_ribosomes / ribosome_assignment_deltas.vals_.sum();
-    ribosome_assignments_.vals_ += floor(ribosome_assignment_deltas.vals_ * multiplier);
-  }
-  assert((ribosome_assignments_.vals_ >= 0).all());
+  assignRibosomes(&cell);
     
-  // It is not the case that all ribosomes will be assigned.  If TFs sum to <1, by design we will not assign all ribosomes.
-  // However if TFs sum to >= 1, then all ribosomes should be assigned at this point in the code.
-  // Eventually: There should be a limit to how many ribosomes can work on one gene, like maybe 1 ribosome per 20 AAs.
-  // (times number of gene copies) 
-  if (fabs(ntfs.vals_.sum() - 1.0) < 1e-3 && cell.cytosol_contents_["Ribosome"] > 0) {
-    // Rounding errors can make us be slightly off though.
-    PASSERT(ribosome_assignments_.vals_.sum() / cell.cytosol_contents_["Ribosome"] > 0.99,
-            fmt::format("Num ribosomes: {}, ribosome_assignments_: {}",
-                        cell.cytosol_contents_["Ribosome"],
-                        ribosome_assignments_.vals_));
-  }
-  
   // Get random ordering to use for the synthesis reactions.
   static vector<int> random_indices;
   static std::random_device rd;
@@ -796,11 +817,12 @@ void DNA::tick(Cell& cell)
       random_indices.push_back(i);
   std::shuffle(random_indices.begin(), random_indices.end(), g);
   
-  // Run protein synthesis reactions.  These are special reactions which consume only ATP and amino acids, and produce only proteins.
+  // Run protein synthesis reactions.  These are special reactions which are run by ribosomes,
+  // consume only ATP and amino acids, and produce only proteins, ADP, and phosphate.
   cell.cytosol_contents_.probabilisticRound();
   MoleculeVals orig_cytosol_contents = cell.cytosol_contents_;
   for (int idx : random_indices) {
-    if (synthesis_reactions_[idx] && ntfs[idx] > 0)
+    if (synthesis_reactions_[idx])
       synthesis_reactions_[idx]->tick(cell, ribosome_assignments_.vals_[idx]);
   }
  
@@ -940,4 +962,12 @@ void Prokaryotic::applyConfig(const YAML::Node& yaml)
     addReactionType(rxn);
   for (const YAML::Node& biome : yaml["BiomeTable"])
     addBiome(biome);
+}
+
+MoleculeVals Prokaryotic::numAA() const
+{
+  MoleculeVals num_aa(*this);
+  for (size_t i = 0; i < molecule_types_.size(); ++i)
+    num_aa[i] = molecule_types_[i]->num_amino_acids_;
+  return num_aa;
 }

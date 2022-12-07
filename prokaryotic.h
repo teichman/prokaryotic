@@ -238,6 +238,7 @@ public:
   void tick(Cell& cell);
   std::string _str() const { return ""; }
   void setDefaultTranscriptionFactors();
+  void assignRibosomes(Cell* cell);
 };
 
 class Cell : public Printable
@@ -296,6 +297,7 @@ public:
   std::vector<MoleculeType::ConstPtr> moleculeTypes() const;
   size_t numMoleculeTypes() const { return molecule_types_.size(); }
   bool hasMolecule(const std::string& name) const { return molecule_map_.find(name) != molecule_map_.end(); }
+  MoleculeVals numAA() const;
   
   void tick();
   std::string _str() const;
