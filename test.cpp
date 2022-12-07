@@ -392,8 +392,17 @@ TEST_CASE("Protein synthesis rate as a function of num amino acids")
                                                                       "then:\n"
                                                                       "  - Ribosome = 0.0"))));
 
-    
-  for (int i = 0; i < 100000; ++i) {
+  for (int i = 0; i < 10; ++i) {  
+    pro.tick();
+    // With equal transcription factors (the default), confirm that 2*num_amino_acids_ means 1/2 the production rate.
+    // Allow 5% error.
+    cout << "cytosol_contents_" << endl << cell->cytosol_contents_.str("  ") << endl;
+    //cout << "transcription_factors_" << endl << cell->dna_->transcription_factors_.str("  ") << endl;
+    cout << "ribosome_assignments_" << endl << cell->dna_->ribosome_assignments_.str("  ") << endl;
+    CHECK(2*cell->cytosol_contents_["Protein 2X"] / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
+  }
+  
+  for (int i = 0; i < 100; ++i) {
     pro.tick();
     // cout << "------" << endl;
     // cout << cell->str() << endl;
@@ -402,22 +411,9 @@ TEST_CASE("Protein synthesis rate as a function of num amino acids")
   }
   cout << cell->str() << endl;
   cout << "concentrations: " << endl << cell->cytosolConcentrations().str("  ") << endl;
+  CHECK(2*cell->cytosol_contents_["Protein 2X"] / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
 
   CHECK(cell->cytosol_contents_["Ribosome"] == 2e4);
-  
-  // With equal transcription factors (the default), confirm that 2*num_amino_acids_ means 1/2 the production rate.
-  // Allow 5% error.
-  CHECK(2*cell->cytosol_contents_["Protein 2X"] / cell->cytosol_contents_["Protein X"] == doctest::Approx(1).epsilon(0.05));
-  
-  
-  // cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Protein X < 10000\n"
-  //                                                                     "then:\n"
-  //                                                                     "  - Protein X = 1.0"))));
-  // cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: ATP Synthase < 300\n"
-  //                                                                     "then:\n"
-  //                                                                     "  - ATP Synthase = 10.0"))));
-
-  
 }
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.

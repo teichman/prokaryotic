@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <algorithm>
 #include <random>
 #include <fmt/ranges.h>
 #include <fmt/core.h>
@@ -576,16 +577,32 @@ void DNA::tick(Cell& cell)
     ntfs.vals_ /= ntfs.vals_.sum();
 
   // Assign free ribosomes.
+  // transcription_factors_ defines the target distribution of ribosomes, not the distribution that free ribosomes will be assigned to.
+  // (this is a big difference after several ticks)
+  // Free ribosomes are assigned according to the normalized distribution of deltas.
   assert(ntfs.vals_.size() == synthesis_reactions_.size());
   int num_free_ribosomes = cell.cytosol_contents_["Ribosome"] - ribosome_assignments_.vals_.sum();
   assert(num_free_ribosomes >= 0);
+  MoleculeVals ribosome_assignment_deltas(pro_);
   for (int i = 0; i < ntfs.vals_.size(); ++i) {
     if (ntfs.vals_[i] > 0) {
       assert(pro_.molecule(i)->num_amino_acids_ > 0);
-      ribosome_assignments_.vals_[i] += floor(ntfs.vals_[i] * num_free_ribosomes);
+      //ribosome_assignments_.vals_[i] += floor(ntfs.vals_[i] * num_free_ribosomes);
+      double target_num_ribosomes = ntfs.vals_[i] * cell.cytosol_contents_["Ribosome"];
+      ribosome_assignment_deltas.vals_[i] = std::max<double>(0, target_num_ribosomes - ribosome_assignments_.vals_[i]);
+    }
+  }
+  assert((ribosome_assignment_deltas.vals_ >= 0).all());
+  ribosome_assignment_deltas.vals_ /= ribosome_assignment_deltas.vals_.sum();
+
+  for (int i = 0; i < ribosome_assignment_deltas.vals_.size(); ++i) {
+    if (ribosome_assignment_deltas.vals_[i] > 0) {
+      assert(pro_.molecule(i)->num_amino_acids_ > 0);
+      ribosome_assignments_.vals_[i] += floor(ribosome_assignment_deltas.vals_[i] * num_free_ribosomes);
     }
   }
   assert((ribosome_assignments_.vals_ >= 0).all());
+  assert(fabs(ribosome_assignments_.vals_.sum() - cell.cytosol_contents_["Ribosome"]) < 1e-3);
 
   // Get random ordering to use for the synthesis reactions.
   static vector<int> random_indices;
@@ -604,7 +621,7 @@ void DNA::tick(Cell& cell)
       synthesis_reactions_[idx]->tick(cell, ribosome_assignments_.vals_[idx]);
   }
  
-  cout << "[DNA::tick] cytosol contents before pround: " << endl << cell.cytosol_contents_.str("    ") << endl;
+  // cout << "[DNA::tick] cytosol contents before pround: " << endl << cell.cytosol_contents_.str("    ") << endl;
   for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i)
     assert(cell.cytosol_contents_.vals_[i] >= -1e-6);
   
