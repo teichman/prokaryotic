@@ -315,7 +315,11 @@ void ProteasomeReactionType::tick(Cell& cell, int num_protein_copies) const
 
   // Apply the changes to the cell.
   //cout << "Removing " << num_denatured_to_remove << " denatured " << target_idx_ << endl;
+
+  // Should probably encapsulate these two.
   cell.cytosol_contents_denatured_.vals_[target_idx_] -= num_denatured_to_remove;
+  cell.obs_.recordProteasomeAction(target_idx_, num_denatured_to_remove);
+  
   cell.applyReactionResult(flux, protein_idx_);  
 }
  
@@ -504,8 +508,20 @@ void Biome::tick()
 CellObserver::CellObserver(const Prokaryotic& pro) :
   pro_(pro),
   transformation_flux_(pro),
-  protein_io_flux_(pro)
+  protein_io_flux_(pro),
+  protein_synth_(pro),
+  protein_den_(pro),
+  proteasome_action_(pro)
 {
+}
+
+std::string CellObserver::formatProteinStateChanges(const std::string& prefix) const
+{
+  ostringstream oss;
+  oss << prefix << "Protein synthesis: " << protein_synth_.vals_.transpose() << endl;
+  oss << prefix << "Protein denaturing: " << protein_den_.vals_.transpose() << endl;
+  oss << prefix << "Proteasome action: " << proteasome_action_.vals_.transpose() << endl;
+  return oss.str();
 }
 
 std::string CellObserver::formatProteinIOFlux(const std::string& prefix) const
@@ -546,6 +562,24 @@ void CellObserver::tick()
 {
   transformation_flux_.vals_.setZero();
   protein_io_flux_.vals_.setZero();
+  protein_synth_.vals_.setZero();
+  protein_den_.vals_.setZero();
+  proteasome_action_.vals_.setZero();
+}
+
+void CellObserver::recordProteasomeAction(int target_idx_, double num_to_remove)
+{
+  proteasome_action_[target_idx_] += num_to_remove;
+}
+
+void CellObserver::recordProteinSynthAndDen(const MoleculeVals& flux)
+{
+  for (int i = 0; i < flux.vals_.size(); ++i) {
+    if (flux[i] > 0)
+      protein_synth_[i] += flux[i];
+    if (flux[i] < 0)
+      protein_den_[i] -= flux[i];
+  }
 }
 
 void CellObserver::recordReactionFlux(const MoleculeVals& flux, int protein_idx)

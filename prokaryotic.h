@@ -267,12 +267,19 @@ public:
   // On average, when X is consumed, what are the products of that reaction?
   MoleculeMat transformation_flux_;
   MoleculeMat protein_io_flux_;
+  MoleculeVals protein_synth_;
+  MoleculeVals protein_den_;  // denaturing
+  MoleculeVals proteasome_action_;  // denatured protein -> amino acids
+  
   
   CellObserver(const Prokaryotic& pro);
   void recordReactionFlux(const MoleculeVals& flux, int protein_idx);
+  void recordProteinSynthAndDen(const MoleculeVals& flux);
+  void recordProteasomeAction(int target_idx_, double num_to_remove);  
   void tick();
   std::string formatTransformationFlux(const std::string& prefix = "") const;
   std::string formatProteinIOFlux(const std::string& prefix = "") const;
+  std::string formatProteinStateChanges(const std::string& prefix = "") const;
 };
 
 class Cell : public Printable

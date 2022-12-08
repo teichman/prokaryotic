@@ -756,8 +756,8 @@ TEST_CASE("Full system so far")
   // Dunno how much of these we need, we'll see where they end up at steady state.
   cell->cytosol_contents_["ATP Synthase"] = 1e6;
   cell->cytosol_contents_["Amylase"] = 1e3;
-  cell->cytosol_contents_["Ribosome"] = 1e4;
-  cell->cytosol_contents_["Proteasome"] = 1e4;
+  cell->cytosol_contents_["Ribosome"] = 1e5;
+  cell->cytosol_contents_["Proteasome"] = 1e6;
 
   const YAML::Node& yaml = YAML::LoadFile("config.yaml");
   for (const YAML::Node& dnaif : yaml["DNA"])
@@ -774,6 +774,8 @@ TEST_CASE("Full system so far")
       cout << "protein io" << endl;
       cout << cell->obs_.formatProteinIOFlux("    ") << endl;
       cout << cell->obs_.formatTransformationFlux("    ") << endl;
+      cout << cell->obs_.formatProteinStateChanges("    ") << endl;
+      
     }
     pro.tick();
   }
