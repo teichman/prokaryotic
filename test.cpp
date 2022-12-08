@@ -754,6 +754,7 @@ TEST_CASE("Full system so far")
 
       cout << "protein io" << endl;
       cout << cell->obs_.formatProteinIOFlux("    ") << endl;
+      cout << cell->obs_.formatTransformationFlux("    ") << endl;
     }
     pro.tick();
   }

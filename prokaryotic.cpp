@@ -139,31 +139,24 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
   MoleculeVals flux(pro_);
   flux.vals_ = (outputs_.vals_ - inputs_.vals_) * rate * num_protein_copies;
 
-  if (protein_name_ == "Ribosome") {
-    cout << "Ribosome reaction flux before" << endl;
-    cout << flux.str("  ") << endl;
-    cout << "cytosol contents before" << endl;
-    cout << cell.cytosol_contents_.str("  ") << endl;
-  }
-  
-  // cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
-  // cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
+  // if (protein_name_ == "Ribosome") {
+  //   cout << "Ribosome reaction flux before" << endl;
+  //   cout << flux.str("  ") << endl;
+  //   cout << "cytosol contents before" << endl;
+  //   cout << cell.cytosol_contents_.str("  ") << endl;
+  // }
   
   // It's not unlikely that tick() is not granular enough and we end up making something negative.
   // In that case, shrink the flux so that minimum final cytosol_contents_ result will be zero.
   double multiplier = 1.0;
   for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
-    // if (cell.cytosol_contents_[i] + flux[i] < -1e3) {
-    //   cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i] + flux[i]
-    //        << ".  This seems too big." << endl;
-    // }
     if (flux.vals_[i] < 0) {
       multiplier = std::min(multiplier, -0.999 * cell.cytosol_contents_.vals_[i] / flux.vals_[i]);
     }
   }
-  cout << flux.vals_.transpose() << endl;
+  // cout << flux.vals_.transpose() << endl;
   flux.vals_ *= multiplier;
-  cout << flux.vals_.transpose() << endl;
+  // cout << flux.vals_.transpose() << endl;
   cell.applyReactionResult(flux, protein_idx_);
 }
 
@@ -512,17 +505,34 @@ std::string CellObserver::formatProteinIOFlux(const std::string& prefix) const
 {
   ostringstream oss;
   const ArrayXXd& mat = protein_io_flux_.vals_;
-  for (int i = 0; i < mat.rows(); ++i) {
+  
+  int width = 0;
+  for (int i = 0; i < mat.rows(); ++i)
     if (pro_.molecule(i)->num_amino_acids_ > 0)
-      oss << prefix << std::setw(20) << pro_.moleculeName(i) << " " << mat.row(i) << endl;
-  }
+      width = std::max<double>(width, pro_.molecule(i)->name_.size());
+
+  for (int i = 0; i < mat.rows(); ++i)
+    if (pro_.molecule(i)->num_amino_acids_ > 0)
+      oss << prefix << "| " << std::setw(width) << pro_.moleculeName(i) << " | " << mat.row(i) << endl;
+  
   return oss.str();
 }
 
-std::string CellObserver::formatTransformationFlux() const
+std::string CellObserver::formatTransformationFlux(const std::string& prefix) const
 {
-  assert(false);
-  return "";
+  ostringstream oss;
+  const ArrayXXd& mat = transformation_flux_.vals_;
+
+  int width = 0;
+  for (int i = 0; i < mat.rows(); ++i)
+    if (mat.row(i).abs().sum() > 0)
+      width = std::max<double>(width, pro_.molecule(i)->name_.size());
+  
+  for (int i = 0; i < mat.rows(); ++i)
+    if (mat.row(i).abs().sum() > 0)
+      oss << prefix << "| " << std::setw(width) << pro_.moleculeName(i) << " | " << mat.row(i) << endl;
+  
+  return oss.str();  
 }
 
 void CellObserver::tick()

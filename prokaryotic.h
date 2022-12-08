@@ -270,7 +270,7 @@ public:
   CellObserver(const Prokaryotic& pro);
   void recordReactionFlux(const MoleculeVals& flux, int protein_idx);
   void tick();
-  std::string formatTransformationFlux() const;
+  std::string formatTransformationFlux(const std::string& prefix = "") const;
   std::string formatProteinIOFlux(const std::string& prefix = "") const;
 };
 
