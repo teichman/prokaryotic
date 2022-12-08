@@ -18,7 +18,6 @@ MoleculeTable:
     symbol: S
     daltons: 18015.6  # Uh, 100 glucoses?  I don't have a way to represent polymers rn.
   - name: Glucose
-    symbol: G
     daltons: 180.156
   - name: ATP Synthase
     symbol: hammer

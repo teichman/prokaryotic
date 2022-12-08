@@ -195,12 +195,13 @@ public:
   typedef std::shared_ptr<const DNAThen> ConstPtr;
   
   const Prokaryotic& pro_;
+  Cell& cell_;
   std::string molecule_name_;
   int molecule_idx_;
   std::string operation_type_;
   double value_;
   
-  DNAThen(const Prokaryotic& pro, const std::string& thenstr);
+  DNAThen(const Prokaryotic& pro, Cell& cell, const std::string& thenstr);
   void apply(DNA* dna) const;
 };
 
@@ -211,6 +212,7 @@ public:
   typedef std::shared_ptr<const DNAIf> ConstPtr;
 
   const Prokaryotic& pro_;
+  Cell& cell_;
   std::string molecule_name_;
   int molecule_idx_;
   std::string inequality_type_;
@@ -219,8 +221,8 @@ public:
   std::vector<DNAIf::Ptr> subifs_;
   std::vector<DNAThen::Ptr> thens_;
   
-  DNAIf(const Prokaryotic& pro, const std::string& ifstr);
-  DNAIf(const Prokaryotic& pro, const YAML::Node& yaml);
+  DNAIf(const Prokaryotic& pro, Cell& cell, const std::string& ifstr);
+  DNAIf(const Prokaryotic& pro, Cell& cell, const YAML::Node& yaml);
   void initializeFromString(const std::string& ifstr);
 
   void execute(Cell* cell) const;
@@ -311,6 +313,7 @@ public:
   static MoleculeVals cytosolContents(const Prokaryotic& pro, const MoleculeVals& cytosol_concentrations, double um3);
   void addDNAIf(const YAML::Node& yaml);
   void applyReactionResult(const MoleculeVals& flux, int protein_idx);
+  void divide();
 };
 
 // Contains the whole simulation model

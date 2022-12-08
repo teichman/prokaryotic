@@ -281,7 +281,7 @@ TEST_CASE("DNAIf")
 
   SUBCASE("Testing in isolation")
   {
-    DNAIf dnaif(pro, "ATP Synthase < 300");
+    DNAIf dnaif(pro, *cell, "ATP Synthase < 300");
     CHECK(dnaif.molecule_name_ == "ATP Synthase");
     CHECK(dnaif.inequality_type_ == "<");
     CHECK(dnaif.threshold_ == 300);
@@ -290,8 +290,8 @@ TEST_CASE("DNAIf")
     cell->cytosol_contents_["ATP Synthase"] = 1000;
     CHECK(!dnaif.check(*cell));
 
-    DNAThen dnathen(pro, "all = 0");
-    DNAThen dnathen2(pro, "ATP Synthase += 1.0");
+    DNAThen dnathen(pro, *cell, "all = 0");
+    DNAThen dnathen2(pro, *cell, "ATP Synthase += 1.0");
     
     dnathen.apply(cell->dna_.get());
     CHECK(cell->dna_->transcription_factors_["ATP Synthase"] == 0);
@@ -309,14 +309,14 @@ TEST_CASE("DNAIf")
   
   SUBCASE("Nested")
   {
-    DNAIf dnaif(pro, "ATP Synthase < 300");
+    DNAIf dnaif(pro, *cell, "ATP Synthase < 300");
 
     CHECK(dnaif.check(*cell));
     cell->cytosol_contents_["ATP Synthase"] = 1000;
     CHECK(!dnaif.check(*cell));
 
-    DNAThen::Ptr dnathen(new DNAThen(pro, "all = 0"));
-    DNAThen::Ptr dnathen2(new DNAThen(pro, "ATP Synthase += 1.0"));
+    DNAThen::Ptr dnathen(new DNAThen(pro, *cell, "all = 0"));
+    DNAThen::Ptr dnathen2(new DNAThen(pro, *cell, "ATP Synthase += 1.0"));
 
     dnaif.thens_.push_back(dnathen);
     dnaif.execute(cell.get());
@@ -343,10 +343,10 @@ TEST_CASE("DNAIf")
 
   SUBCASE("YAML construction")
   {
-    DNAIf dnaif(pro, YAML::Load("if: ATP Synthase < 300\n"
-                                "then:\n"
-                                "  - all = 0\n"
-                                "  - ATP Synthase += 1.0"));
+    DNAIf dnaif(pro, *cell, YAML::Load("if: ATP Synthase < 300\n"
+                                       "then:\n"
+                                       "  - all = 0\n"
+                                       "  - ATP Synthase += 1.0"));
     
     // Transcription factors should be unchanged because ATP Synthase is high enough.
     cell->cytosol_contents_["ATP Synthase"] = 1000;
@@ -368,10 +368,10 @@ TEST_CASE("DNAIf")
     Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
     pro.biomes_.push_back(biome);
 
-    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: ATP Synthase < 300\n"
-                                                                        "then:\n"
-                                                                        "  - all = 0\n"
-                                                                        "  - ATP Synthase += 1.0"))));
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: ATP Synthase < 300\n"
+                                                                               "then:\n"
+                                                                               "  - all = 0\n"
+                                                                               "  - ATP Synthase += 1.0"))));
 
     cell->cytosol_contents_["ATP Synthase"] = 200;
     
@@ -415,11 +415,11 @@ TEST_CASE("Transcription factors and ribosome assignment")
   cell->cytosol_contents_["Ribosome"] = 1000;
 
   // Set the rules: Don't make ribosomes, but do allocate ribosomes equally to X and Y.
-  cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
-                                                                      "then:\n"
-                                                                      "  - Ribosome = 0.0\n"
-                                                                      "  - X = 1.0\n"
-                                                                      "  - Y = 1.0"))));
+  cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Ribosome > 1\n"
+                                                                             "then:\n"
+                                                                             "  - Ribosome = 0.0\n"
+                                                                             "  - X = 1.0\n"
+                                                                             "  - Y = 1.0"))));
 
   pro.tick();
   CHECK(cell->dna_->transcription_factors_["X"] == 1);
@@ -475,9 +475,9 @@ TEST_CASE("Protein synthesis basics")
   cell->cytosol_contents_["Ribosome"] = 2e4;  // should get 10k each to ribosomes, X, and 2X.
 
   // Ok just don't make any ribosomes, it's complicating things.
-  cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
-                                                                      "then:\n"
-                                                                      "  - Ribosome = 0.0"))));
+  cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Ribosome > 1\n"
+                                                                             "then:\n"
+                                                                             "  - Ribosome = 0.0"))));
 
   SUBCASE("Protein synthesis rate as a function of num amino acids")
   {
@@ -506,9 +506,9 @@ TEST_CASE("Protein synthesis basics")
   SUBCASE("Protein synthesis rate as a function of num ribosomes")
   {
     // Only make X.
-    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
-                                                                        "then:\n"
-                                                                        "  - Protein 2X = 0.0"))));
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Ribosome > 1\n"
+                                                                               "then:\n"
+                                                                               "  - Protein 2X = 0.0"))));
     
     // Now confirm that doubling the num ribosomes doubles the protein creation rate
     // when there are infinite resources available.
@@ -529,14 +529,14 @@ TEST_CASE("Protein synthesis basics")
   SUBCASE("Protein synthesis balancing out protein denaturing")
   {
     // Don't make Protein 2X either.  Now we're just making X.
-    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
-                                                                        "then:\n"
-                                                                        "  - Protein 2X = 0.0"))));
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Ribosome > 1\n"
+                                                                               "then:\n"
+                                                                               "  - Protein 2X = 0.0"))));
     // Turn off Protein X synthesis as soon as we have 10k of them.
-    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Protein X > 500\n"
-                                                                        "then:\n"
-                                                                        "  - Protein X = 0.0"))));
-
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Protein X > 500\n"
+                                                                               "then:\n"
+                                                                               "  - Protein X = 0.0"))));
+    
     // Temporarily make AAs not come in the cell, and ensure we aren't starting with any.
     cell->membrane_permeabilities_["Amino acids"] = 0.0;
     REQUIRE(cell->cytosol_contents_["Amino acids"] == 0.0);
@@ -567,9 +567,9 @@ TEST_CASE("Protein synthesis basics")
     CHECK(num_protein_x == doctest::Approx(cell->cytosol_contents_["Ribosome"] + 500).epsilon(0.05));
 
     // Shut off production of that protein.
-    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
-                                                                        "then:\n"
-                                                                        "  - Protein X = 0.0"))));
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Ribosome > 1\n"
+                                                                               "then:\n"
+                                                                               "  - Protein X = 0.0"))));
 
     // Make Protein X degrade really fast.
     protein_x->half_life_hours_ = 0.5;
@@ -590,10 +590,10 @@ TEST_CASE("Protein synthesis basics")
   SUBCASE("Protein synthesis rate when AA concentration equals KM")
   {
     cell->cytosol_contents_["Ribosome"] = 1000;
-    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
-                                                                        "then:\n"
-                                                                        "  - Protein X = 0.1\n"
-                                                                        "  - Protein 2X = 0"))));
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Ribosome > 1\n"
+                                                                               "then:\n"
+                                                                               "  - Protein X = 0.1\n"
+                                                                               "  - Protein 2X = 0"))));
     
     protein_x->half_life_hours_ = std::numeric_limits<double>::max();
     biome->concentrations_["Amino acids"] = 60;
@@ -673,10 +673,10 @@ TEST_CASE("Proteasome")
     cell->cytosol_contents_["Ribosome"] = 1e4;
 
     // Don't make anything except X.
-    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
-                                                                        "then:\n"
-                                                                        "  - Ribosome = 0.0\n"
-                                                                        "  - Proteasome = 0.0"))));
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Ribosome > 1\n"
+                                                                               "then:\n"
+                                                                               "  - Ribosome = 0.0\n"
+                                                                               "  - Proteasome = 0.0"))));
 
     // Without proteasomes, we get lots of buildup of denatured X.
     for (int i = 0; i < 60 * 60; ++i)
@@ -690,15 +690,15 @@ TEST_CASE("Proteasome")
 
     // Turn on proteasome production by the ribosomes, and turn off production of X.
     cell->dna_->dna_ifs_.pop_back();
-    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Ribosome > 1\n"
-                                                                        "then:\n"
-                                                                        "  - X = 0.0\n"
-                                                                        "  - Ribosome = 0.0\n"
-                                                                        "  - Proteasome = 1.0"))));
-    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, YAML::Load("if: Proteasome > 10000\n"
-                                                                        "then:\n"
-                                                                        "  - Ribosome = 0.0\n"
-                                                                        "  - Proteasome = 0.0"))));
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Ribosome > 1\n"
+                                                                               "then:\n"
+                                                                               "  - X = 0.0\n"
+                                                                               "  - Ribosome = 0.0\n"
+                                                                               "  - Proteasome = 1.0"))));
+    cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Proteasome > 10000\n"
+                                                                               "then:\n"
+                                                                               "  - Ribosome = 0.0\n"
+                                                                               "  - Proteasome = 0.0"))));
     for (int i = 0; i < 24*60*60; ++i) {
       if (i % 10000 == 0) {
         cout << "============================================================" << endl;
@@ -777,7 +777,7 @@ TEST_CASE("Full system so far")
       cout << cell->obs_.formatProteinStateChanges("    ") << endl;
       
     }
-    pro.tick();
+    pro.tick();  // Problem is here, when running all tests.
   }
 
   // Confirm that ATP+ADP is conserved.
@@ -787,6 +787,47 @@ TEST_CASE("Full system so far")
   // ostringstream oss;
   // oss << "MoleculeTable:" << endl
   //     << "  - name: Amino acids" << endl    
+}
+
+TEST_CASE("DNAIf divide")
+{
+  printHeader();
+  Prokaryotic pro;
+
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 0)));  
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Amino acids", "", 0)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Proteasome", "", 0, 1000)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 0, 150000)));
+  
+  Cell::Ptr cell(new Cell(pro, "cell"));
+  pro.cells_.push_back(cell);
+
+  // Provide infinite AAs and ATP.
+  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+  pro.biomes_.push_back(biome);
+  biome->concentrations_["Amino acids"] = 200;
+  biome->concentrations_["ATP"] = 200;
+
+  // AAs and ATP come in through the membrane very fast.  ADP leaves very fast.
+  cell->membrane_permeabilities_["Amino acids"] = 1.0;  
+  cell->membrane_permeabilities_["ATP"] = 1.0;
+  cell->membrane_permeabilities_["ADP"] = 1.0;
+
+  // Start us off with some of each important molecule.
+  cell->cytosol_contents_["Amino acids"] = 6e7;  // 100 mM sounds typical
+  cell->cytosol_contents_["ATP"] = 6e6;  // 10 mM sounds typical, maybe a bit high
+  cell->cytosol_contents_["Phosphate"] = 6e6;
+  cell->cytosol_contents_["Ribosome"] = 1e5;
+  cell->cytosol_contents_["Proteasome"] = 1e6;
+
+  cell->dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro, *cell, YAML::Load("if: Ribosome > 1\n"
+                                                                             "then:\n"
+                                                                             "  - divide()\n"))));
+
+  pro.tick();
+
 }
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.

@@ -617,7 +617,7 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
 
 void Cell::addDNAIf(const YAML::Node& yaml)
 {
-  dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro_, yaml)));
+  dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro_, *this, yaml)));
 }
 
 void Cell::applyReactionResult(const MoleculeVals& flux, int protein_idx)
@@ -630,6 +630,11 @@ void Cell::applyReactionResult(const MoleculeVals& flux, int protein_idx)
   assert(atp_p_balance < 1e-6);
   cytosol_contents_.vals_ += flux.vals_;
   obs_.recordReactionFlux(flux, protein_idx);
+}
+
+void Cell::divide()
+{
+  cout << "Dividing." << endl;
 }
 
 std::string Cell::_str() const
@@ -689,6 +694,11 @@ void Cell::tick(const Biome& biome)
   obs_.tick();
   
   // Passive membrane permeations
+  // Should make this depend on cell volume (once the volume changes..)
+  // details here: http://book.bionumbers.org/what-is-the-permeability-of-the-cell-membrane/
+  // basically flux = -p (cin - cout), the same model I guessed at originally but per unit surface area.
+  // Eventually: tag metabolic intermediates with a charge to make them not permeate the membrane.
+  // Positively charged molecules really do not want to go through.
   MoleculeVals cytosol_concentrations = cytosolConcentrations();
   auto deltas = (biome.concentrations_.vals_ - cytosol_concentrations.vals_);
   assert((membrane_permeabilities_.vals_ < 1.0 + 1e-6).all());
@@ -731,17 +741,19 @@ void Cell::tick(const Biome& biome)
   cytosol_contents_denatured_.probabilisticRound();
 }
 
-DNAIf::DNAIf(const Prokaryotic& pro, const YAML::Node& yaml) :
-  pro_(pro)
+DNAIf::DNAIf(const Prokaryotic& pro, Cell& cell, const YAML::Node& yaml) :
+  pro_(pro),
+  cell_(cell)
 {
   initializeFromString(yaml["if"].as<string>());
   for (const YAML::Node& thenstr : yaml["then"]) {
-    thens_.push_back(DNAThen::Ptr(new DNAThen(pro_, thenstr.as<string>())));
+    thens_.push_back(DNAThen::Ptr(new DNAThen(pro_, cell_, thenstr.as<string>())));
   }
 }
 
-DNAIf::DNAIf(const Prokaryotic& pro, const std::string& ifstr) :
-  pro_(pro)
+DNAIf::DNAIf(const Prokaryotic& pro, Cell& cell, const std::string& ifstr) :
+  pro_(pro),
+  cell_(cell)
 {
   initializeFromString(ifstr);
 }
@@ -788,10 +800,15 @@ bool DNAIf::check(const Cell& cell) const
   return false;
 }
 
-DNAThen::DNAThen(const Prokaryotic& pro, const std::string& thenstr) :
-  pro_(pro)
+DNAThen::DNAThen(const Prokaryotic& pro, Cell& cell, const std::string& thenstr) :
+  pro_(pro),
+  cell_(cell)
 {
   vector<string> tokens = tokenizeSimple(thenstr);
+
+  if (tokens.size() == 1 && tokens[0] == "divide()") {
+    operation_type_ = "divide";
+  }
   
   for (size_t i = 0; i < tokens.size(); ++i) {
     if (tokens[i] == "=" || tokens[i] == "+=" || tokens[i] == "-=") {
@@ -812,6 +829,11 @@ DNAThen::DNAThen(const Prokaryotic& pro, const std::string& thenstr) :
 
 void DNAThen::apply(DNA* dna) const
 {
+  if (operation_type_ == "divide") {
+    cell_.divide();
+    return;
+  }
+  
   if (molecule_idx_ >= 0) {
     if (operation_type_ == "=")
       dna->transcription_factors_[molecule_idx_] = value_;
@@ -958,13 +980,32 @@ void DNA::tick(Cell& cell)
   assignRibosomes(&cell);
     
   // Get random ordering to use for the synthesis reactions.
-  static vector<int> random_indices;
-  static std::random_device rd;
-  static std::mt19937 g(rd());
-  if (random_indices.empty())
+  // This is unnecessarily slow but I guess I'll profile before optimizing anything.
+  vector<int> random_indices;
+  std::random_device rd;
+  std::mt19937 g(rd());
+  if (random_indices.empty()) {
+    cout << "Initializing random_indices." << endl;
+    cout << "synthesis_reactions_.size(): " << synthesis_reactions_.size() << endl;
     for (size_t i = 0; i < synthesis_reactions_.size(); ++i)
       random_indices.push_back(i);
+  }
+
+  cout << "random_indices: " << endl;
+  for (size_t i = 0; i < random_indices.size(); ++i) {
+    cout << " " << random_indices[i] << endl;
+  }
+  cout << "synthesis_reactions: " << endl;
+  for (size_t i = 0; i < synthesis_reactions_.size(); ++i) {
+    if (synthesis_reactions_[i])
+      cout << " " << i << " catalyzed by " << synthesis_reactions_[i]->protein_name_ << endl;
+    else
+      cout << " " << i << " empty slot" << endl;
+  }
+    
+  assert(random_indices.size() == synthesis_reactions_.size());
   std::shuffle(random_indices.begin(), random_indices.end(), g);
+  assert(random_indices.size() == synthesis_reactions_.size());
   
   // Run protein synthesis reactions.  These are special reactions which are run by ribosomes,
   // consume only ATP and amino acids, and produce only proteins, ADP, and phosphate.
