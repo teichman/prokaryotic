@@ -731,8 +731,8 @@ TEST_CASE("Full system so far")
   cell->cytosol_contents_["Glucose"] = 6e6;
   
   // Dunno how much of these we need, we'll see where they end up at steady state.
-  cell->cytosol_contents_["ATP Synthase"] = 1e4;
-  cell->cytosol_contents_["Amylase"] = 1e4;
+  cell->cytosol_contents_["ATP Synthase"] = 1e6;
+  cell->cytosol_contents_["Amylase"] = 1e3;
   cell->cytosol_contents_["Ribosome"] = 1e4;
   cell->cytosol_contents_["Proteasome"] = 1e4;
 
@@ -741,9 +741,15 @@ TEST_CASE("Full system so far")
     cell->addDNAIf(dnaif);
 
   for (int i = 0; i < 24*60*60; ++i) {
-    if (i < 2 || i > 24*60*60 - 2) {
+    if (i < 100 || i > 24*60*60 - 2 || i % 10000 == 0) {
       cout << "tick " << i << endl;
       cout << cell->str("  ") << endl;
+      // cout << "Where ATP is going: " << endl;
+      // cout << cell->obs_.transformation_flux_.row("ATP").str("  ") << endl;
+      // cout << cell->obs_.transformation_flux_.vals_ << endl;
+
+      cout << "protein io" << endl;
+      cout << cell->obs_.formatProteinIOFlux("    ") << endl;
     }
     pro.tick();
   }
@@ -751,44 +757,7 @@ TEST_CASE("Full system so far")
   
   // ostringstream oss;
   // oss << "MoleculeTable:" << endl
-  //     << "  - name: Amino acids" << endl
-  //     << "    symbol: brick" << endl
-  //     << "    daltons: 100" << endl
-  //     << "  - name: ATP" << endl
-  //     << "    symbol: bang" << endl
-  //     << "    daltons: 507.18" << endl
-  //     << "  - name: ADP" << endl
-  //     << "    symbol: briefcase" << endl
-  //     << "    daltons: 423.7" << endl
-  //     << "  - name: Phosphate" << endl
-  //     << "    symbol: P" << endl
-  //     << "    daltons: 94.97" << endl
-  //     << "  - name: X" << endl
-  //     << "    symbol: X" << endl
-  //     << "    daltons: 500" << endl
-  //     << "  - name: R" << endl
-  //     << "    symbol: R" << endl
-  //     << "    daltons: 1000" << endl
-  //     << "  - name: ATP Synthase" << endl
-  //     << "    symbol: hammer" << endl
-  //     << "    daltons: 5e5" << endl
-  //     << "    half-life-hours: 1" << endl
-  //     << "    num-amino-acids: 5e3" << endl
-  //     << "  - name: ATP Consumer" << endl
-  //     << "    symbol: gear" << endl
-  //     << "    daltons: 1e6" << endl
-  //     << "    num-amino-acids: 5e3" << endl
-  //     << "  - name: Ribosome" << endl
-  //     << "    symbol: factory" << endl
-  //     << "    daltons: 2.7e6" << endl
-  //     << "    num-amino-acids: 7459" << endl
-  //     << "  - name: Proteasome" << endl
-  //     << "    symbol: aoeu" << endl
-  //     << "    daltons: 2.4e6  # http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/" << endl
-  //     << "    num-amino-acids: 2e4  # figure 2 of http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/ " << endl
-  //     << "    half-life-hours: 60  # http://book.bionumbers.org/how-fast-do-proteasomes-degrade-proteins/" << endl
-
-    
+  //     << "  - name: Amino acids" << endl    
 }
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.

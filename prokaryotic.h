@@ -65,6 +65,23 @@ public:
   bool hasMolecule(const std::string& name) const;
 };
 
+
+class MoleculeMat : public Printable
+{
+public:
+  const Prokaryotic& pro_;
+  Eigen::ArrayXXd vals_;
+  
+  MoleculeMat(const Prokaryotic& pro);  
+  std::string _str() const;
+  MoleculeVals row(const std::string& name) const;
+  
+  // // Provide string access for easy setup tasks.
+  // // (Don't use where performance is sensitive.)
+  // double& operator[](const std::string& name0, const std::string& name1) const;
+};
+
+
 // See Fig 1 of http://book.bionumbers.org/how-many-reactions-do-enzymes-carry-out-each-second/
 // substrate_concentration in mM, km in mM, kcat in reactions / sec
 // Also https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics
@@ -241,6 +258,22 @@ public:
   void assignRibosomes(Cell* cell);
 };
 
+// Collects stats on the Cell as it does its thing.
+class CellObserver
+{
+public:
+  const Prokaryotic& pro_;
+  // On average, when X is consumed, what are the products of that reaction?
+  MoleculeMat transformation_flux_;
+  MoleculeMat protein_io_flux_;
+  
+  CellObserver(const Prokaryotic& pro);
+  void recordReactionFlux(const Eigen::ArrayXd& flux, int protein_idx);
+  void tick();
+  std::string formatTransformationFlux() const;
+  std::string formatProteinIOFlux(const std::string& prefix = "") const;
+};
+
 class Cell : public Printable
 {
 public:
@@ -256,7 +289,8 @@ public:
   MoleculeVals membrane_permeabilities_;
   DNA::Ptr dna_;  // non-const so Prokaryotic can make changes to it.
   std::vector<ProteasomeReactionType::ConstPtr> proteasome_reactions_;
-    
+  CellObserver obs_;
+  
   Cell(const Prokaryotic& pro, const std::string& name);
 
   std::string _str() const;
@@ -268,6 +302,7 @@ public:
   // concentrations is mM
   static MoleculeVals cytosolContents(const Prokaryotic& pro, const MoleculeVals& cytosol_concentrations, double um3);
   void addDNAIf(const YAML::Node& yaml);
+  void applyReactionResult(const Eigen::ArrayXd& flux, int protein_idx);
 };
 
 // Contains the whole simulation model

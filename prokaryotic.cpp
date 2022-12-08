@@ -1,3 +1,4 @@
+#include <iomanip>
 #include <cstdint>
 #include <algorithm>
 #include <random>
@@ -11,12 +12,8 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 
-
-using std::shared_ptr;
-using std::cout, std::endl;
-using std::vector;
-using std::string;
-using Eigen::ArrayXd;
+using namespace std;
+using Eigen::ArrayXd, Eigen::ArrayXXd;
 
 void PASSERT(bool flag, const std::string& msg)
 {
@@ -78,7 +75,8 @@ ReactionType::ReactionType(const Prokaryotic& pro, const YAML::Node& yaml) :
   pro_(pro),
   inputs_(pro),
   outputs_(pro),
-  kms_(pro)
+  kms_(pro),
+  protein_idx_(-1)
 {
   string formula = yaml["formula"].as<string>();
 
@@ -108,7 +106,8 @@ ReactionType::ReactionType(const Prokaryotic& pro,
   inputs_(inputs),
   outputs_(outputs),
   kms_(kms),
-  kcat_(kcat)
+  kcat_(kcat),
+  protein_idx_(-1)
 {
   for (int i = 0; i < inputs_.vals_.size(); ++i) {
     if (inputs_.vals_[i] > 0)
@@ -137,21 +136,23 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
   assert((inputs_.vals_ >= 0.0).all());
   assert((outputs_.vals_ >= 0.0).all());
   //cout << "Reaction running with rate " << rate << " and num_protein_copies " << num_protein_copies << endl;
-  cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
-  cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
 
-  // It's not unlikely that tick() is not granular enough and we end up making something negative.
-  // In that case, just clamp it back to zero.
-  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
-    if (cell.cytosol_contents_[i] < -1e3) {
-      cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i]
-           << ".  This seems too big." << endl;
-    }
-    cell.cytosol_contents_.vals_[i] = std::max<double>(0, cell.cytosol_contents_.vals_[i]);
-  }
+  ArrayXd flux = (outputs_.vals_ - inputs_.vals_) * rate * num_protein_copies;
+  // cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
+  // cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
   
-  // Should only need one of these at the end of Cell::tick()
-  //cell.cytosol_contents_.probabilisticRound();
+  // It's not unlikely that tick() is not granular enough and we end up making something negative.
+  // In that case, just clamp the flux so the result will be zero.
+  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
+    // if (cell.cytosol_contents_[i] + flux[i] < -1e3) {
+    //   cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i] + flux[i]
+    //        << ".  This seems too big." << endl;
+    // }
+    if (cell.cytosol_contents_[i] + flux[i] < 0)
+      flux[i] = -cell.cytosol_contents_.vals_[i];
+  }
+
+  cell.applyReactionResult(flux, protein_idx_);
 }
 
 std::string ReactionType::_str() const
@@ -174,7 +175,8 @@ ReactionType::ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protei
   pro_(pro),
   inputs_(pro),
   outputs_(pro),
-  kms_(pro)
+  kms_(pro),
+  protein_idx_(-1)
 {
   protein_name_ = "Ribosome";
   protein_idx_ = pro_.moleculeIdx(protein_name_);
@@ -206,7 +208,8 @@ ReactionType::ReactionType(const Prokaryotic& pro) :
   pro_(pro),
   inputs_(pro),
   outputs_(pro),
-  kms_(pro)
+  kms_(pro),
+  protein_idx_(-1)
 {
 }
 
@@ -290,16 +293,16 @@ void ProteasomeReactionType::tick(Cell& cell, int num_protein_copies) const
   // It's possible for us to accidentally overstep our bounds here and end up making something go negative.
   // If that happens, print a warning but continue.
   for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
-    if (cell.cytosol_contents_[i] < -1e3) {
-      cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i]
-           << ".  This seems too big." << endl;
-    }
+    // if (cell.cytosol_contents_[i] < -1e3) {
+    //   cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i]
+    //        << ".  This seems too big." << endl;
+    // }
     cell.cytosol_contents_.vals_[i] = std::max<double>(0, cell.cytosol_contents_.vals_[i]);
     
-    if (cell.cytosol_contents_denatured_[i] < -1e3) {
-      cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_denatured_[i]
-           << ".  This seems too big." << endl;
-    }
+    // if (cell.cytosol_contents_denatured_[i] < -1e3) {
+    //   cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_denatured_[i]
+    //        << ".  This seems too big." << endl;
+    // }
     cell.cytosol_contents_denatured_.vals_[i] = std::max<double>(0, cell.cytosol_contents_denatured_.vals_[i]);
   }  
 }
@@ -424,6 +427,31 @@ MoleculeVals MoleculeVals::normalized() const
   return result;
 }
 
+MoleculeMat::MoleculeMat(const Prokaryotic& pro) :
+  pro_(pro)
+{
+  int num = pro.moleculeTypes().size();
+  vals_ = ArrayXXd::Zero(num, num);
+}
+
+std::string MoleculeMat::_str() const
+{
+  assert(false);
+}
+
+MoleculeVals MoleculeMat::row(const std::string& name) const
+{
+  MoleculeVals row(pro_);
+  row.vals_ = vals_.row(pro_.moleculeIdx(name));
+  return row;
+}
+
+// double& MoleculeMat::operator[](const std::string& name0, const std::string& name1) const
+// {
+//   return vals_.coeffRef(pro_.moleculeIdx(name0), pro_.moleculeIdx(name1));
+// }
+
+
 Biome::Biome(const Prokaryotic& pro, double m3, const std::string& name) :
   pro_(pro),
   m3_(m3),
@@ -461,8 +489,51 @@ void Biome::tick()
 {  
 }
 
-Cell::Cell(const Prokaryotic& pro, const std::string& name) :
-           
+CellObserver::CellObserver(const Prokaryotic& pro) :
+  pro_(pro),
+  transformation_flux_(pro),
+  protein_io_flux_(pro)
+{
+}
+
+std::string CellObserver::formatProteinIOFlux(const std::string& prefix) const
+{
+  ostringstream oss;
+  const ArrayXXd& mat = protein_io_flux_.vals_;
+  for (int i = 0; i < mat.rows(); ++i) {
+    if (pro_.molecule(i)->num_amino_acids_ > 0)
+      oss << prefix << std::setw(20) << pro_.moleculeName(i) << " " << mat.row(i) << endl;
+  }
+  return oss.str();
+}
+
+std::string CellObserver::formatTransformationFlux() const
+{
+  assert(false);
+  return "";
+}
+
+void CellObserver::tick()
+{
+  transformation_flux_.vals_.setZero();
+  protein_io_flux_.vals_.setZero();
+}
+
+void CellObserver::recordReactionFlux(const Eigen::ArrayXd& flux, int protein_idx)
+{
+  // If we consumed i and produced j in this reaction, record the transformation (normalized by how much was consumed)
+  for (int i = 0; i < flux.size(); ++i)
+    if (flux[i] < 0)
+      for (int j = 0; j < flux.size(); ++j)
+        if (flux[j] > 0)
+          transformation_flux_.vals_(i, j) += -flux[j] / flux[i];
+
+  // If it was a protein that did the reaction, record io for that protein type.
+  if (protein_idx >= 0)
+    protein_io_flux_.vals_.row(protein_idx) += flux;
+}
+
+Cell::Cell(const Prokaryotic& pro, const std::string& name) :           
   pro_(pro),
   name_(name),
   um3_(1.0),
@@ -470,7 +541,8 @@ Cell::Cell(const Prokaryotic& pro, const std::string& name) :
   cytosol_contents_denatured_(pro_),
   membrane_contents_(pro_),
   membrane_permeabilities_(pro_),
-  dna_(new DNA(pro_))
+  dna_(new DNA(pro_)),
+  obs_(pro)
 {
   // some tests don't have Proteasomes defined, so only make these reactions
   // if that molecule type exists.
@@ -485,6 +557,12 @@ void Cell::addDNAIf(const YAML::Node& yaml)
   dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro_, yaml)));
 }
 
+void Cell::applyReactionResult(const Eigen::ArrayXd& flux, int protein_idx)
+{
+  cytosol_contents_.vals_ += flux;
+  obs_.recordReactionFlux(flux, protein_idx);
+}
+
 std::string Cell::_str() const
 {
   std::ostringstream oss;
@@ -492,7 +570,7 @@ std::string Cell::_str() const
   oss << "  um3_: " << um3_ << endl;
   oss << "  cytosol_contents_: " << endl << cytosol_contents_.str("    ") << endl;
   oss << "  cytosol_contents_denatured_: " << endl << cytosol_contents_denatured_.str("    ") << endl;
-  oss << "  membrane_contents_: " << endl << membrane_contents_.str("    ") << endl;
+//  oss << "  membrane_contents_: " << endl << membrane_contents_.str("    ") << endl;
   return oss.str();
 }
 
@@ -539,6 +617,8 @@ void Cell::setCytosolContentsByConcentrations(const MoleculeVals& cytosol_concen
 
 void Cell::tick(const Biome& biome)
 {
+  obs_.tick();
+  
   // Passive membrane permeations
   MoleculeVals cytosol_concentrations = cytosolConcentrations();
   auto deltas = (biome.concentrations_.vals_ - cytosol_concentrations.vals_);
