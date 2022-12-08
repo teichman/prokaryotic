@@ -129,7 +129,8 @@ TEST_CASE("Ribosome")
   
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP Synthase", ":hammer:", 5e5, 200, half_life_hours)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", ":factory:", 2e6, 1)));
-  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", ":briefcase:", 423.17)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 423.17)));
+  pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADPX", ":briefcase:", 423.17)));
   
   Cell::Ptr cell(new Cell(pro, "cell"));
   pro.cells_.push_back(cell);
@@ -149,11 +150,11 @@ TEST_CASE("Ribosome")
   // Add a reaction that generates ATP Synthase.
   {
     MoleculeVals inputs(pro);
-    inputs["ADP"] = 1;  // A strange world in which we will fabricate ATP Synthase from 1 molecule of ADP.
+    inputs["ADPX"] = 1;  // A strange world in which we will fabricate ATP Synthase from 1 molecule of ADPX.
     MoleculeVals outputs(pro);
     outputs["ATP Synthase"] = 1;
     MoleculeVals kms(pro);
-    kms["ADP"] = 1e-3;
+    kms["ADPX"] = 1e-3;
     double kcat = 0.1;
     ReactionType::ConstPtr rt(new ReactionType(pro, inputs, outputs, kms, kcat));
     cell->dna_->synthesis_reactions_[pro.moleculeIdx("ATP Synthase")] = rt;
@@ -170,7 +171,7 @@ TEST_CASE("Ribosome")
   // Now add the building blocks.  We should get some ATP Synthase.
   cout << "----------------------------------------" << endl;
   cout << "Added building blocks to make ATP Synthase out of. " << endl;
-  cell->cytosol_contents_["ADP"] = 300;
+  cell->cytosol_contents_["ADPX"] = 300;
   for (int i = 0; i < 100; ++i) {
     pro.tick();
     //cout << cell->str() << endl;
@@ -729,6 +730,9 @@ TEST_CASE("Full system so far")
   cell->cytosol_contents_["Phosphate"] = 6e6;
   cell->cytosol_contents_["Starch"] = 6e6;
   cell->cytosol_contents_["Glucose"] = 6e6;
+
+
+  int num_orig_atp = cell->cytosol_contents_["ATP"];
   
   // Dunno how much of these we need, we'll see where they end up at steady state.
   cell->cytosol_contents_["ATP Synthase"] = 1e6;
@@ -740,8 +744,8 @@ TEST_CASE("Full system so far")
   for (const YAML::Node& dnaif : yaml["DNA"])
     cell->addDNAIf(dnaif);
 
-  for (int i = 0; i < 24*60*60; ++i) {
-    if (i < 100 || i > 24*60*60 - 2 || i % 10000 == 0) {
+  for (int i = 0; i < 2*60*60; ++i) {
+    if (i % 1000 == 0) {
       cout << "tick " << i << endl;
       cout << cell->str("  ") << endl;
       // cout << "Where ATP is going: " << endl;
@@ -753,7 +757,10 @@ TEST_CASE("Full system so far")
     }
     pro.tick();
   }
-  
+
+  // Confirm that ATP+ADP is conserved.
+  // This should be an exact check, but you know what, whatever.  Eventually I'll track that down.
+  CHECK(cell->cytosol_contents_["ATP"] + cell->cytosol_contents_["ADP"] == doctest::Approx(num_orig_atp));
   
   // ostringstream oss;
   // oss << "MoleculeTable:" << endl

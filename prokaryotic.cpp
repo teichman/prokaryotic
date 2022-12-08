@@ -131,27 +131,39 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
       minrate = std::min(minrate, rateMM(concentrations[i], kms_[i], kcat_));
   double rate = minrate;  // reactions / tick (1 tick == 1 second?)
   assert(rate >= 0);
-  
-  // update cell.cytosol_counts_
+
   assert((inputs_.vals_ >= 0.0).all());
   assert((outputs_.vals_ >= 0.0).all());
   //cout << "Reaction running with rate " << rate << " and num_protein_copies " << num_protein_copies << endl;
 
-  ArrayXd flux = (outputs_.vals_ - inputs_.vals_) * rate * num_protein_copies;
+  MoleculeVals flux(pro_);
+  flux.vals_ = (outputs_.vals_ - inputs_.vals_) * rate * num_protein_copies;
+
+  if (protein_name_ == "Ribosome") {
+    cout << "Ribosome reaction flux before" << endl;
+    cout << flux.str("  ") << endl;
+    cout << "cytosol contents before" << endl;
+    cout << cell.cytosol_contents_.str("  ") << endl;
+  }
+  
   // cell.cytosol_contents_.vals_ -= inputs_.vals_ * rate * num_protein_copies;
   // cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
   
   // It's not unlikely that tick() is not granular enough and we end up making something negative.
-  // In that case, just clamp the flux so the result will be zero.
+  // In that case, shrink the flux so that minimum final cytosol_contents_ result will be zero.
+  double multiplier = 1.0;
   for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
     // if (cell.cytosol_contents_[i] + flux[i] < -1e3) {
     //   cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i] + flux[i]
     //        << ".  This seems too big." << endl;
     // }
-    if (cell.cytosol_contents_[i] + flux[i] < 0)
-      flux[i] = -cell.cytosol_contents_.vals_[i];
+    if (flux.vals_[i] < 0) {
+      multiplier = std::min(multiplier, -0.999 * cell.cytosol_contents_.vals_[i] / flux.vals_[i]);
+    }
   }
-
+  cout << flux.vals_.transpose() << endl;
+  flux.vals_ *= multiplier;
+  cout << flux.vals_.transpose() << endl;
   cell.applyReactionResult(flux, protein_idx_);
 }
 
@@ -519,18 +531,18 @@ void CellObserver::tick()
   protein_io_flux_.vals_.setZero();
 }
 
-void CellObserver::recordReactionFlux(const Eigen::ArrayXd& flux, int protein_idx)
+void CellObserver::recordReactionFlux(const MoleculeVals& flux, int protein_idx)
 {
   // If we consumed i and produced j in this reaction, record the transformation (normalized by how much was consumed)
-  for (int i = 0; i < flux.size(); ++i)
-    if (flux[i] < 0)
-      for (int j = 0; j < flux.size(); ++j)
-        if (flux[j] > 0)
-          transformation_flux_.vals_(i, j) += -flux[j] / flux[i];
+  for (int i = 0; i < flux.vals_.size(); ++i)
+    if (flux.vals_[i] < 0)
+      for (int j = 0; j < flux.vals_.size(); ++j)
+        if (flux.vals_[j] > 0)
+          transformation_flux_.vals_(i, j) += -flux.vals_[j] / flux.vals_[i];
 
   // If it was a protein that did the reaction, record io for that protein type.
   if (protein_idx >= 0)
-    protein_io_flux_.vals_.row(protein_idx) += flux;
+    protein_io_flux_.vals_.row(protein_idx) += flux.vals_;
 }
 
 Cell::Cell(const Prokaryotic& pro, const std::string& name) :           
@@ -557,9 +569,13 @@ void Cell::addDNAIf(const YAML::Node& yaml)
   dna_->dna_ifs_.push_back(DNAIf::Ptr(new DNAIf(pro_, yaml)));
 }
 
-void Cell::applyReactionResult(const Eigen::ArrayXd& flux, int protein_idx)
+void Cell::applyReactionResult(const MoleculeVals& flux, int protein_idx)
 {
-  cytosol_contents_.vals_ += flux;
+  double atp_adp_balance = fabs(flux["ATP"] + flux["ADP"]);
+  double atp_p_balance = fabs(flux["ATP"] + flux["Phosphate"]);
+  assert(atp_adp_balance < 1e-6);
+  assert(atp_p_balance < 1e-6);
+  cytosol_contents_.vals_ += flux.vals_;
   obs_.recordReactionFlux(flux, protein_idx);
 }
 

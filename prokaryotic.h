@@ -268,7 +268,7 @@ public:
   MoleculeMat protein_io_flux_;
   
   CellObserver(const Prokaryotic& pro);
-  void recordReactionFlux(const Eigen::ArrayXd& flux, int protein_idx);
+  void recordReactionFlux(const MoleculeVals& flux, int protein_idx);
   void tick();
   std::string formatTransformationFlux() const;
   std::string formatProteinIOFlux(const std::string& prefix = "") const;
@@ -302,7 +302,7 @@ public:
   // concentrations is mM
   static MoleculeVals cytosolContents(const Prokaryotic& pro, const MoleculeVals& cytosol_concentrations, double um3);
   void addDNAIf(const YAML::Node& yaml);
-  void applyReactionResult(const Eigen::ArrayXd& flux, int protein_idx);
+  void applyReactionResult(const MoleculeVals& flux, int protein_idx);
 };
 
 // Contains the whole simulation model

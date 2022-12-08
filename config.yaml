@@ -38,7 +38,7 @@ MoleculeTable:
 ReactionTable:
   - formula: Glucose + 30 ADP + 30 Phosphate -> 30 ATP
     protein: ATP Synthase
-    kcat: 1e-3
+    kcat: 3  # https://www.varsitytutors.com/biochemistry-help/atp-synthase
     KMs:
       Glucose: 1e-1
       ADP: 1e-2
