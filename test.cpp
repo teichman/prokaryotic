@@ -699,14 +699,33 @@ TEST_CASE("Proteasome")
                                                                         "then:\n"
                                                                         "  - Ribosome = 0.0\n"
                                                                         "  - Proteasome = 0.0"))));
-    for (int i = 0; i < 5*60*60; ++i)
+    for (int i = 0; i < 24*60*60; ++i) {
+      if (i % 10000 == 0) {
+        cout << "============================================================" << endl;
+        cout << "tick " << i << endl;
+        cout << "============================================================" << endl;
+        cout << "protein io" << endl;
+        cout << cell->obs_.formatProteinIOFlux("  ") << endl;
+        cout << "transformation flux" << endl;
+        cout << cell->obs_.formatTransformationFlux("  ") << endl;
+        cout << "cytosol_contents_" << endl;
+        cout << cell->cytosol_contents_.str("  ") << endl;
+        cout << "cytosol_contents_denatured_" << endl;
+        cout << cell->cytosol_contents_denatured_.str("  ") << endl;
+      }
       pro.tick();
+    }
 
     cout << "After a while has passed, proteasomes should have cleaned up the denatured proteins." << endl;
     cout << "cytosol_contents_" << endl;
     cout << cell->cytosol_contents_.str("  ") << endl;
     cout << "cytosol_contents_denatured_" << endl;
     cout << cell->cytosol_contents_denatured_.str("  ") << endl;
+
+    cout << "protein io" << endl;
+    cout << cell->obs_.formatProteinIOFlux("    ") << endl;
+    cout << cell->obs_.formatTransformationFlux("    ") << endl;
+    
     CHECK(cell->cytosol_contents_denatured_.vals_.sum() == doctest::Approx(0));
   }
 }

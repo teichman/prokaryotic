@@ -163,6 +163,7 @@ public:
 
   size_t target_idx_;
   size_t atp_idx_;
+  double input_denatured_;
   
   ProteasomeReactionType(const Prokaryotic& pro, size_t target_idx);
   void tick(Cell& cell, int num_protein_copies) const;  

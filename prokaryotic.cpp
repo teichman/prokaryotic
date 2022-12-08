@@ -149,11 +149,10 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
   // It's not unlikely that tick() is not granular enough and we end up making something negative.
   // In that case, shrink the flux so that minimum final cytosol_contents_ result will be zero.
   double multiplier = 1.0;
-  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
-    if (flux.vals_[i] < 0) {
+  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i)
+    if (flux.vals_[i] < 0)
       multiplier = std::min(multiplier, -0.999 * cell.cytosol_contents_.vals_[i] / flux.vals_[i]);
-    }
-  }
+  
   // cout << flux.vals_.transpose() << endl;
   flux.vals_ *= multiplier;
   // cout << flux.vals_.transpose() << endl;
@@ -234,8 +233,10 @@ ProteasomeReactionType::ProteasomeReactionType(const Prokaryotic& pro, size_t ta
   // e.g. if the target protein is 80aa, then on average one proteasome consumes half a target protein per second.
 
   kcat_ = 40.0;  // This corresponds to the 40 aa/s.
+
+  input_denatured_ = 1.0 / target_num_aa;
+  // inputs_[target_idx_] = 1.0 / target_num_aa;
   
-  inputs_[target_idx_] = 1.0 / target_num_aa;
   // How much ATP does it take to consume one aa?
   // It takes 5 ATP to append a single aa in the ribosome.  Maybe it's cheaper than that?
   inputs_["ATP"] = 2;
@@ -245,7 +246,6 @@ ProteasomeReactionType::ProteasomeReactionType(const Prokaryotic& pro, size_t ta
   outputs_["Amino acids"] = 0.9;
   outputs_["ADP"] = inputs_["ATP"];
   outputs_["Phosphate"] = inputs_["ATP"];
-
   
   // We're aiming for 40 AAs / second.  https://micro.magnet.fsu.edu/cells/ribosomes/ribosomes.html
   // Normal cellular ATP is 1-10 mM.
@@ -286,30 +286,37 @@ void ProteasomeReactionType::tick(Cell& cell, int num_protein_copies) const
   //cout << "ProteasomeReactionType::tick running with " << num_protein_copies << " proteasome copies, rate " << rate << endl;
   
   // For just the target protein input: Subtract from cytosol_counts_denatured_.
-  double num_denatured_to_remove = inputs_[target_idx_] * rate * num_protein_copies;
-  cell.cytosol_contents_denatured_.vals_[target_idx_] -= num_denatured_to_remove;
-  // cout << "Removed " << num_denatured_to_remove << " denatured proteins." << endl;
-  // For just the ATP input: Subtract from cytosol_contents_.
-  cell.cytosol_contents_.vals_[atp_idx_] -= inputs_[atp_idx_] * rate * num_protein_copies;
-  
-  // All outputs go in to cytosol_counts_, so do the usual update here.
-  cell.cytosol_contents_.vals_ += outputs_.vals_ * rate * num_protein_copies;
+  // Everything else will apply to cytosol_contents_ via applyReactionResult().
+  double num_denatured_to_remove = input_denatured_ * rate * num_protein_copies;
 
-  // It's possible for us to accidentally overstep our bounds here and end up making something go negative.
-  // If that happens, print a warning but continue.
-  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i) {
-    // if (cell.cytosol_contents_[i] < -1e3) {
-    //   cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_[i]
-    //        << ".  This seems too big." << endl;
-    // }
-    cell.cytosol_contents_.vals_[i] = std::max<double>(0, cell.cytosol_contents_.vals_[i]);
-    
-    // if (cell.cytosol_contents_denatured_[i] < -1e3) {
-    //   cout << "WARNING: " << pro_.molecule(i)->name_ << " went negative, to " << cell.cytosol_contents_denatured_[i]
-    //        << ".  This seems too big." << endl;
-    // }
-    cell.cytosol_contents_denatured_.vals_[i] = std::max<double>(0, cell.cytosol_contents_denatured_.vals_[i]);
-  }  
+  MoleculeVals flux(pro_);
+  flux.vals_ = (outputs_.vals_ - inputs_.vals_) * rate * num_protein_copies;
+
+  // It's not unlikely that tick() is not granular enough and we end up making something negative.
+  // In that case, shrink the flux so that minimum final cytosol_contents_ result will be zero.
+  double multiplier = 1.0;
+  multiplier = std::min(multiplier, 0.999 * cell.cytosol_contents_denatured_.vals_[target_idx_] / num_denatured_to_remove);
+  for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i)
+    if (flux.vals_[i] < 0)
+      multiplier = std::min(multiplier, -0.999 * cell.cytosol_contents_.vals_[i] / flux.vals_[i]);
+  
+  // Scale flux *and* num_denatured_to_remove.
+  // cout << "-----" << endl;
+  // cout << "Before applynig multiplier." << endl;
+  // cout << "num_denatured_to_remove: " << num_denatured_to_remove << endl;
+  // cout << "flux: " << endl << flux.str("  ") << endl;
+  
+  flux.vals_ *= multiplier;
+  num_denatured_to_remove *= multiplier;
+  // cout << "multiplier: " << multiplier << endl;
+  // cout << "After scaling" << endl;
+  // cout << "num_denatured_to_remove: " << num_denatured_to_remove << endl;
+  // cout << "flux: " << endl << flux.str("  ") << endl;
+
+  // Apply the changes to the cell.
+  //cout << "Removing " << num_denatured_to_remove << " denatured " << target_idx_ << endl;
+  cell.cytosol_contents_denatured_.vals_[target_idx_] -= num_denatured_to_remove;
+  cell.applyReactionResult(flux, protein_idx_);  
 }
  
 double rateMM(double substrate_concentration, double km, double kcat)
@@ -583,6 +590,8 @@ void Cell::applyReactionResult(const MoleculeVals& flux, int protein_idx)
 {
   double atp_adp_balance = fabs(flux["ATP"] + flux["ADP"]);
   double atp_p_balance = fabs(flux["ATP"] + flux["Phosphate"]);
+  if (atp_adp_balance > 1e-6)
+    cout << "flux " << endl << flux.str("  ") << endl;
   assert(atp_adp_balance < 1e-6);
   assert(atp_p_balance < 1e-6);
   cytosol_contents_.vals_ += flux.vals_;
