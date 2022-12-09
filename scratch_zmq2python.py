@@ -1,3 +1,5 @@
+import struct
+import ipdb
 import time
 import zmq
 
@@ -13,7 +15,10 @@ while True:
     #  Wait for next request from client
     print("Waiting for a message.")
     message = socket.recv()
-    print(f"Received request: {message}")
+    value = struct.unpack('d', message)[0]
+    print(f"Received msg: {type(message)} {message} {value}")
+    
+    # breakpoint()
 
     #  Do some 'work'
     time.sleep(1)

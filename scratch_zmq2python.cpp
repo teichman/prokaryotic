@@ -17,17 +17,31 @@ int main()
         sock1.get(zmq::sockopt::last_endpoint);
     std::cout << "Connecting to "
               << last_endpoint << std::endl;
-
-    std::array<zmq::const_buffer, 3> send_msgs = {
-        zmq::str_buffer("Hello"),
-        zmq::str_buffer("over"),
-        zmq::str_buffer("zmq")
-    };
+    
+    //zmq::message_t msg;
+    
+    // std::array<zmq::const_buffer, 3> send_msgs = {
+    //     zmq::str_buffer("Hello"),
+    //     zmq::str_buffer("over"),
+    //     zmq::str_buffer("zmq")
+    // };
 
     while (true) {
-      cout << "Published." << endl;
-      if (!zmq::send_multipart(sock1, send_msgs))
-        return 1;
+      // if (!zmq::send_multipart(sock1, send_msgs))
+      //   return 1;
+      // vector<int> data;
+      // data.push_back(13);
+      // data.push_back(42);
+      // zmq::message_t msg(data);
+      //const char bytes[2] = {1, 2};
+      //zmq::message_t msg(bytes, 2);
+      
+      double payload = 3.14159;
+      zmq::message_t msg(&payload, 8);
+      
+      cout << "Publishing " << msg << " of size " << msg.size() << endl;
+      sock1.send(msg, zmq::send_flags::none);
+      
       
       std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
