@@ -251,24 +251,30 @@ public:
   const Prokaryotic& pro_;
   // On average, when X is consumed, what are the products of that reaction?
   MoleculeMat transformation_flux_;
+  MoleculeMat transformation_flux_nr_;  // num_reactions
   MoleculeMat protein_io_flux_;
   MoleculeVals protein_synth_;
   MoleculeVals protein_den_;  // denaturing
   MoleculeVals proteasome_action_;  // denatured protein -> amino acids
   std::vector<double> num_ticks_per_division_period_;  // in ticks
   int num_ticks_since_last_division_;
+  std::vector<Eigen::ArrayXd> cytosol_contents_history_;
   
   CellObserver(const Prokaryotic& pro);
   void recordReactionFlux(const MoleculeVals& flux, int protein_idx);
   void recordProteinSynthAndDen(const MoleculeVals& flux);
   void recordProteasomeAction(int target_idx_, double num_to_remove);
   void recordDivision();
+  void recordCytosolContents(const MoleculeVals& cytosol_contents);
   void tick();
   double averageDivisionHours() const;
   std::string formatTransformationFlux(const std::string& prefix = "") const;
   std::string formatProteinIOFlux(const std::string& prefix = "") const;
   std::string formatProteinStateChanges(const std::string& prefix = "") const;
   std::string formatDivisionHours(const std::string& prefix = "") const;
+  std::string formatCytosolContentsHistoryAvg(const std::string& prefix = "") const;
+
+  MoleculeVals cytosolContentsHistoryAvg() const;
 };
 
 class Cell : public Printable

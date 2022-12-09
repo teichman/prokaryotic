@@ -767,10 +767,6 @@ TEST_CASE("Full system so far")
     if (i % 1000 == 0) {
       cout << "tick " << i << endl;
       cout << cell->str("  ") << endl;
-      // cout << "Where ATP is going: " << endl;
-      // cout << cell->obs_.transformation_flux_.row("ATP").str("  ") << endl;
-      // cout << cell->obs_.transformation_flux_.vals_ << endl;
-
       cout << "protein io" << endl;
       cout << cell->obs_.formatProteinIOFlux("    ") << endl;
       cout << cell->obs_.formatTransformationFlux("    ") << endl;
@@ -835,12 +831,14 @@ TEST_CASE("Biome step")
 {
   printHeader();
   Prokaryotic pro;
-  pro.applyConfig("config.yaml");
+  const YAML::Node& yaml = YAML::LoadFile("2022-12-08-test_config.yaml");
+  pro.applyConfig(yaml);
   Cell::Ptr cell = pro.cells_[0];
   
   // The cell is taking in things in the environment at some rate.  Nevermind how, for the moment.
   cell->membrane_permeabilities_["Amino acids"] = 0.1;
   cell->membrane_permeabilities_["Starch"] = 0.01;
+  cell->membrane_permeabilities_["Phosphate"] = 0.01;
 
   // Start us off with some of each important molecule.
   cell->cytosol_contents_["Amino acids"] = 6e7;  // 100 mM sounds typical
@@ -850,16 +848,25 @@ TEST_CASE("Biome step")
   cell->cytosol_contents_["Glucose"] = 6e6;
   
   // Dunno how much of these we need, we'll see where they end up at steady state.
-  cell->cytosol_contents_["ATP Synthase"] = 1e6;
+  cell->cytosol_contents_["ATP Synthase"] = 1e7;
   cell->cytosol_contents_["Amylase"] = 1e3;
-  cell->cytosol_contents_["Ribosome"] = 3e4;
-  cell->cytosol_contents_["Proteasome"] = 1e6;
-
-  const YAML::Node& yaml = YAML::LoadFile("config.yaml");
+  cell->cytosol_contents_["Ribosome"] = 2e5;
+  cell->cytosol_contents_["Proteasome"] = 3e4;
+  
   for (const YAML::Node& dnaif : yaml["DNA"])
     cell->addDNAIf(dnaif);
 
-  pro.step();
+  for (int i = 0; i < 10; ++i) {
+    cout << "STEP " << i << endl;
+    pro.step();    
+    cout << cell->obs_.formatProteinIOFlux("    ") << endl;
+    cout << cell->obs_.formatTransformationFlux("    ") << endl;
+    cout << cell->obs_.formatProteinStateChanges("    ") << endl;
+    cout << cell->obs_.formatCytosolContentsHistoryAvg("    ") << endl;
+  }
+
+  MoleculeVals avg = cell->obs_.cytosolContentsHistoryAvg();
+  CHECK(avg["ATP"] + avg["ADP"] > 6e6);
 }
 
 

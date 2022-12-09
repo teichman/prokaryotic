@@ -522,11 +522,12 @@ void Biome::step()
   // what Cell::step() does.
   for (Cell::Ptr cell : cells_) {
     cell->obs_.num_ticks_per_division_period_.clear();
+    cell->obs_.cytosol_contents_history_.clear();
   }
   
-  double num_hours = 12;
+  double num_hours = 24;
   for (int i = 0; i < int(num_hours * 60 * 60); ++i) {
-    if (i % 60*60 == 0)
+    if (i % (60*60) == 0)
       cout << "." << std::flush;
     tick();
   }
@@ -563,6 +564,7 @@ void Biome::step()
 CellObserver::CellObserver(const Prokaryotic& pro) :
   pro_(pro),
   transformation_flux_(pro),
+  transformation_flux_nr_(pro),
   protein_io_flux_(pro),
   protein_synth_(pro),
   protein_den_(pro),
@@ -577,6 +579,24 @@ std::string CellObserver::formatProteinStateChanges(const std::string& prefix) c
   oss << prefix << "Protein synthesis: " << protein_synth_.vals_.transpose() << endl;
   oss << prefix << "Protein denaturing: " << protein_den_.vals_.transpose() << endl;
   oss << prefix << "Proteasome action: " << proteasome_action_.vals_.transpose() << endl;
+  return oss.str();
+}
+
+MoleculeVals CellObserver::cytosolContentsHistoryAvg() const
+{
+  MoleculeVals avg(pro_);
+  for (size_t i = 0; i < cytosol_contents_history_.size(); ++i)
+    avg.vals_ += cytosol_contents_history_[i];
+  avg.vals_ /= cytosol_contents_history_.size();
+  return avg;
+}
+
+std::string CellObserver::formatCytosolContentsHistoryAvg(const std::string& prefix) const
+{
+  MoleculeVals avg = cytosolContentsHistoryAvg();
+  ostringstream oss;
+  oss << prefix << "Cytosol contents history average over the last " << cytosol_contents_history_.size() << " ticks." << endl;
+  oss << avg.str(prefix);
   return oss.str();
 }
 
@@ -612,7 +632,17 @@ std::string CellObserver::formatProteinIOFlux(const std::string& prefix) const
 std::string CellObserver::formatTransformationFlux(const std::string& prefix) const
 {
   ostringstream oss;
-  const ArrayXXd& mat = transformation_flux_.vals_;
+  // normalize for num reactions that contributed to this flow from molecule i -> molecule j.
+  // e.g. we want to see 1 ATP -> 1 ADP + 1 P, no matter how many different reactions use ATP in this way.
+  ArrayXXd mat = transformation_flux_.vals_;
+  for (int i = 0; i < mat.rows(); ++i) {
+    for (int j = 0; j < mat.cols(); ++j) {
+      if (fabs(mat(i, j)) > 0) {
+        assert((transformation_flux_nr_.vals_(i, j) > 0));
+        mat(i, j) /= transformation_flux_nr_.vals_(i, j);
+      }
+    }
+  }
 
   int width = 0;
   for (int i = 0; i < mat.rows(); ++i)
@@ -638,6 +668,7 @@ double CellObserver::averageDivisionHours() const
 void CellObserver::tick()
 {
   transformation_flux_.vals_.setZero();
+  transformation_flux_nr_.vals_.setZero();
   protein_io_flux_.vals_.setZero();
   protein_synth_.vals_.setZero();
   protein_den_.vals_.setZero();
@@ -661,6 +692,19 @@ void CellObserver::recordProteinSynthAndDen(const MoleculeVals& flux)
   }
 }
 
+void CellObserver::recordCytosolContents(const MoleculeVals& cytosol_contents)
+{
+  cytosol_contents_history_.push_back(cytosol_contents.vals_);
+  // // adenosine invariant
+  // if (cytosol_contents.hasMolecule("ATP") && cytosol_contents.hasMolecule("ADP")) {
+  //   if (!cytosol_contents_history_.empty()) {
+  //     int ainv1 = cytosol_contents["ATP"] + cytosol_contents["ADP"];  
+  //     int ainv0 = cytosol_contents_history_.back()[0] + cytosol_contents_history_.back()[1];
+  //     assert(ainv0 == ainv1);  ainv1 += ainv0;
+  //   }
+  // }
+}
+
 void CellObserver::recordDivision()
 {
   num_ticks_per_division_period_.push_back(num_ticks_since_last_division_);
@@ -673,8 +717,10 @@ void CellObserver::recordReactionFlux(const MoleculeVals& flux, int protein_idx)
   for (int i = 0; i < flux.vals_.size(); ++i)
     if (flux.vals_[i] < 0)
       for (int j = 0; j < flux.vals_.size(); ++j)
-        if (flux.vals_[j] > 0)
+        if (flux.vals_[j] > 0) {
           transformation_flux_.vals_(i, j) += -flux.vals_[j] / flux.vals_[i];
+          transformation_flux_nr_.vals_(i, j) += 1.0;
+        }
 
   // If it was a protein that did the reaction, record io for that protein type.
   if (protein_idx >= 0)
@@ -707,12 +753,12 @@ void Cell::addDNAIf(const YAML::Node& yaml)
 
 void Cell::applyReactionResult(const MoleculeVals& flux, int protein_idx)
 {
-  double atp_adp_balance = fabs(flux["ATP"] + flux["ADP"]);
-  double atp_p_balance = fabs(flux["ATP"] + flux["Phosphate"]);
-  if (atp_adp_balance > 1e-6)
-    cout << "flux " << endl << flux.str("  ") << endl;
-  assert(atp_adp_balance < 1e-6); atp_adp_balance--;
-  assert(atp_p_balance < 1e-6); atp_p_balance--;
+  // double atp_adp_balance = fabs(flux["ATP"] + flux["ADP"]);
+  // double atp_p_balance = fabs(flux["ATP"] + flux["Phosphate"]);
+  // if (atp_adp_balance > 1e-6)
+  //   cout << "flux " << endl << flux.str("  ") << endl;
+  // assert(atp_adp_balance < 1e-6); atp_adp_balance--; // -Wall -Werror
+  // assert(atp_p_balance < 1e-6); atp_p_balance--;  // -Wall -Werror
   cytosol_contents_.vals_ += flux.vals_;
   obs_.recordReactionFlux(flux, protein_idx);
 }
@@ -724,6 +770,12 @@ void Cell::divide()
   // But for now we want the bare minimum thing that looks like simulation of population growth.
   cout << "Dividing." << endl;
   cytosol_contents_.vals_ /= 2;
+
+  // // Uh I have no way to produce ATP/ADP right now, shit.
+  // cytosol_contents_["ATP"] *= 2;
+  // cytosol_contents_["ADP"] *= 2;
+  // cytosol_contents_["Phosphate"] *= 2;
+  
   cytosol_contents_denatured_.vals_ /= 2;
   membrane_contents_.vals_ /= 2;
   obs_.recordDivision();
@@ -784,6 +836,7 @@ void Cell::setCytosolContentsByConcentrations(const MoleculeVals& cytosol_concen
 void Cell::tick(const Biome& biome)
 {
   obs_.tick();
+  obs_.recordCytosolContents(cytosol_contents_);
   
   // Passive membrane permeations
   // Should make this depend on cell volume (once the volume changes..)

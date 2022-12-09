@@ -1,28 +1,28 @@
 
 # cmake is sufficiently annoying that we are wrapping it in Make
 
-.PHONY: build/debug  # Always do cmake && make.
-build/debug:
-	mkdir -p $@
-	cd $@ && cmake -DCMAKE_BUILD_TYPE=Debug ../../ && make -j 8
+.PHONY: rel  # Always do cmake && make.
+rel:
+	mkdir -p build/$@
+	cd build/$@ && cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ../../ && make -j 8
 
-.PHONY: build/rel  # Always do cmake && make.
-build/rel:
-	mkdir -p $@
-	cd $@ && cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ../../ && make -j 8
+.PHONY: debug  # Always do cmake && make.
+debug:
+	mkdir -p build/$@
+	cd build/$@ && cmake -DCMAKE_BUILD_TYPE=Debug ../../ && make -j 8
 
 clean:
 	rm -rf build CMakeFiles
 	rm -f proto/*.pb.h proto/*.pb.cc CMakeCache.txt
 
-test-rel: build/rel
+test: rel
 	@echo
 	@echo "============================================================"
 	@echo "= Running tests in release mode"
 	@echo "============================================================"
 	build/rel/test -s
 
-test-debug: build/debug
+test-debug: debug
 	@echo
 	@echo "============================================================"
 	@echo "= Running tests in debug mode"
