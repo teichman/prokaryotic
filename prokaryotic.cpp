@@ -629,6 +629,29 @@ std::string CellObserver::formatProteinIOFlux(const std::string& prefix) const
   return oss.str();
 }
 
+
+std::string oomStr2(double num)
+{
+  if (num < 1e-9)
+    return "   -   ";
+  else if (num > 1e-3 && num < 1e3) {
+    return fmt::format("{:7.2g}", num);
+  }
+  else
+    return fmt::format("{:2.1e}", num);
+}
+
+
+
+
+std::string oomStr(double num)
+{
+  if (num < 1e-9)
+    return ".";
+  else
+    return fmt::format("{:d}", int(log10(num)));
+}
+
 std::string CellObserver::formatTransformationFluxMat(const std::string& prefix) const
 {
   ostringstream oss;
@@ -644,27 +667,32 @@ std::string CellObserver::formatTransformationFluxMat(const std::string& prefix)
       }
     }
   }
-
+ 
+  int col_width = 9;
   int max_num_chars = 0;
   vector<string> molecules_to_use;
   for (int i = 0; i < mat.rows(); ++i) {
-    if (mat.row(i).abs().sum() > 0) {
-      string display_name = pro_.molecule(i)->name_;
-      // std::replace(display_name.begin(), display_name.end(), ' ', '');
-      molecules_to_use.push_back(display_name);
-      max_num_chars = std::max<double>(max_num_chars, display_name.size());
-    }
+    string display_name = pro_.molecule(i)->name_;
+    // std::replace(display_name.begin(), display_name.end(), ' ', '');
+    int pad_amt = col_width - display_name.size();
+    if (pad_amt > 0)
+      display_name.append(pad_amt, ' ');
+    molecules_to_use.push_back(display_name);
+    max_num_chars = std::max<double>(max_num_chars, display_name.size());
   }
 
   // header
-  int col_width = 4;
   vector<string> header_lines(col_width, std::string(col_width * molecules_to_use.size(), ' '));
-  // vector<vector<string>> header_lines(col_width, vector<string>(col_width * molecules_to_use.size()));  // row, col
-  for (size_t i = 0; i < molecules_to_use.size(); ++i) {
-    for (int j = 0; j < col_width; ++j) {
-      if (j < molecules_to_use[i].size()) {
-        header_lines[j][col_width * i + j] = molecules_to_use[i][j];
-      }
+  // for (size_t i = 0; i < molecules_to_use.size(); ++i) {
+  //   for (int j = 0; j < col_width; ++j) {
+  //     header_lines[j][col_width * i + j] = molecules_to_use[i][j];
+  //   }
+  // }
+
+  for (size_t row = 0; row < header_lines.size(); ++row) {
+    for (size_t col = 0; col < molecules_to_use.size(); ++col) {
+      cout << "row: " << row << " col: " << col << " stridx: " << col * col_width + row << " letter: " << molecules_to_use[col][row] << endl;
+      header_lines[row][(col * col_width) + row] = molecules_to_use[col][row];
     }
   }
 
@@ -680,11 +708,18 @@ std::string CellObserver::formatTransformationFluxMat(const std::string& prefix)
   for (size_t i = 0; i < header_lines[0].size(); ++i)
     oss << "-";
   oss << endl;
-  
-  
-  for (int i = 0; i < mat.rows(); ++i)
-    if (mat.row(i).abs().sum() > 0)
-      oss << prefix << "| " << std::setw(max_num_chars) << molecules_to_use[i] << " | " << mat.row(i) << endl;
+    
+  for (int i = 0; i < mat.rows(); ++i) {
+    if (mat.row(i).abs().sum() > 0) {
+      oss << prefix << "| " << std::setw(max_num_chars) << molecules_to_use[i] << " |";
+      for (int j = 0; j < mat.cols(); ++j) {
+        oss << " " << std::setw(col_width - 2) << oomStr2(mat(i,j)) << " ";
+      }
+      oss << endl;
+    }
+  }
+    
+      
   return oss.str();
 }
 
