@@ -10,8 +10,12 @@ using namespace std;
 class MessageWrapper
 {
 public:
+  enum dtype {
+    ArrayXd=10,
+    ArrayXXd=11
+  };
+
   vector<uint8_t> data_;
-  uint8_t ARRAYXD = 10;
   
   MessageWrapper() {}
   void append(uint8_t val) { data_.push_back(val); }
@@ -23,12 +27,23 @@ public:
   
   void append(const Eigen::ArrayXd& arr)
   {
-    append(ARRAYXD);
+    append(dtype::ArrayXd);
     append((int)arr.size());
     uint8_t const *dptr = reinterpret_cast<uint8_t const *>(arr.data());
     for (int i = 0; i < arr.size() * 8; ++i)
       data_.push_back(dptr[i]);
   }
+
+  void append(const Eigen::ArrayXXd& arr)
+  {
+    append((uint8_t)dtype::ArrayXXd);
+    append((int)arr.rows());
+    append((int)arr.cols());
+    uint8_t const *dptr = reinterpret_cast<uint8_t const *>(arr.data());
+    for (int i = 0; i < arr.size() * 8; ++i)
+      data_.push_back(dptr[i]);
+  }
+  
   operator zmq::message_t () const
   {
     return zmq::message_t(data_);
@@ -73,11 +88,20 @@ int main()
       // data.push_back(42);
       // zmq::message_t msg(data);
 
-      Eigen::ArrayXd data = Eigen::ArrayXd::Zero(4);
-      data(0) = 13;
-      data(3) = 42;
+      // Eigen::ArrayXd data = Eigen::ArrayXd::Zero(4);
+      // data(0) = 13;
+      // data(3) = 42;
+      // MessageWrapper mw;
+      // mw.append(data);
+
+      Eigen::ArrayXXd data = Eigen::ArrayXXd::Zero(2, 2);
+      data(0, 0) = 1;
+      data(0, 1) = 2;
+      data(1, 0) = 3;
+      data(1, 1) = 4;
       MessageWrapper mw;
       mw.append(data);
+      
       zmq::message_t msg(mw);
       
       // double payload = 3.14159;
