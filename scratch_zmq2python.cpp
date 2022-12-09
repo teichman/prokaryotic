@@ -1,9 +1,41 @@
+#include <Eigen/Dense>
 #include <chrono>
 #include <thread>
 #include <iostream>
 #include <zmq_addon.hpp>
 
 using namespace std;
+
+
+class MessageWrapper
+{
+public:
+  vector<uint8_t> data_;
+  uint8_t ARRAYXD = 10;
+  
+  MessageWrapper() {}
+  void append(uint8_t val) { data_.push_back(val); }
+  void append(int val) {
+    uint8_t* ptr = reinterpret_cast<uint8_t*>(&val);
+    for (int i = 0; i < 4; ++i)
+      data_.push_back(ptr[i]);
+  }
+  
+  void append(const Eigen::ArrayXd& arr)
+  {
+    append(ARRAYXD);
+    append((int)arr.size());
+    uint8_t const *dptr = reinterpret_cast<uint8_t const *>(arr.data());
+    for (int i = 0; i < arr.size() * 8; ++i)
+      data_.push_back(dptr[i]);
+  }
+  operator zmq::message_t () const
+  {
+    return zmq::message_t(data_);
+  }
+};
+
+
 
 int main()
 {
@@ -35,9 +67,21 @@ int main()
       // zmq::message_t msg(data);
       //const char bytes[2] = {1, 2};
       //zmq::message_t msg(bytes, 2);
+
+      // vector<double> data;
+      // data.push_back(13);
+      // data.push_back(42);
+      // zmq::message_t msg(data);
+
+      Eigen::ArrayXd data = Eigen::ArrayXd::Zero(4);
+      data(0) = 13;
+      data(3) = 42;
+      MessageWrapper mw;
+      mw.append(data);
+      zmq::message_t msg(mw);
       
-      double payload = 3.14159;
-      zmq::message_t msg(&payload, 8);
+      // double payload = 3.14159;
+      // zmq::message_t msg(&payload, 8);
       
       cout << "Publishing " << msg << " of size " << msg.size() << endl;
       sock1.send(msg, zmq::send_flags::none);

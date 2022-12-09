@@ -73,7 +73,7 @@ add_executable(scratch_zmq scratch_zmq.cpp)
 target_link_libraries(scratch_zmq ${ZMQ_LIBRARIES})
 
 add_executable(scratch_zmq2python scratch_zmq2python.cpp)
-target_link_libraries(scratch_zmq2python ${ZMQ_LIBRARIES})
+target_link_libraries(scratch_zmq2python ${ZMQ_LIBRARIES} Eigen3::Eigen)
 
 
 
