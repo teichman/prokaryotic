@@ -13,7 +13,7 @@
 #include <Eigen/Dense>
 
 using namespace std;
-using Eigen::ArrayXd, Eigen::ArrayXXd;
+using Eigen::ArrayXd, Eigen::ArrayXXd, Eigen::VectorXd;
 
 void PASSERT(bool flag, const std::string& msg)
 {
@@ -472,13 +472,17 @@ Biome::Biome(const Prokaryotic& pro, double m3, const std::string& name) :
   pro_(pro),
   m3_(m3),
   concentrations_(pro),
-  name_(name)
+  name_(name),
+  cells_(pro.cells_),
+  populations_(VectorXd::Zero(cells_.size()))
 {
 }
 
 Biome::Biome(const Prokaryotic& pro, const YAML::Node& yaml) :
   pro_(pro),
-  concentrations_(pro)
+  concentrations_(pro),
+  cells_(pro.cells_),
+  populations_(VectorXd::Zero(cells_.size()))
 {
   name_ = yaml["name"].as<string>();
   m3_ = yaml["m3"].as<double>();
@@ -502,7 +506,54 @@ std::string Biome::_str() const
 }
 
 void Biome::tick()
-{  
+{
+  for (Cell::Ptr cell : cells_) {
+    cell->tick(*this);
+  }
+}
+
+void Biome::step()
+{
+  // Run the cell for a while.  Get a division rate.
+  // Maybe we run the cell for a few hours, or a day, or something.
+
+  // We should maybe call step() on the cells individually, and this is part of
+  // what Cell::step() does.
+  for (Cell::Ptr cell : cells_) {
+    cell->obs_.num_ticks_per_division_period_.clear();
+  }
+  
+  double num_hours = 12;
+  for (int i = 0; i < int(num_hours * 60 * 60); ++i)
+    tick();
+
+  // Get the average growth rates.
+  VectorXd avg_division_ticks = VectorXd::Zero(cells_.size());
+  for (size_t i = 0; i < cells_.size(); ++i) {
+    //cout << "Cell " << i << " average time to divide (hours): " << cells_[i]->obs_.averageDivisionHours() << endl;
+    cout << "Cell " << i << " division periods (hours): " << cells_[i]->obs_.formatDivisionHours() << endl;
+  }
+  // Initial conditions are weird though.  We probably want to consider only the most recent few division times,
+  // and once a sort of stable state has been reached.  e.g. at the start of a step, a cell may have more resources
+  // than it should bc the cell census was from a previous step when more resources were available, or bc a mutation
+  // has just been applied, etc.  We need to reach a steady state where division happens periodically, and report that
+  // steady state division rate.
+
+  // For now we are not actually increasing population, we are just trying to make the cell minimize its division time.
+  
+  
+  // // Take a step in population growth based on average growth rate.
+  // // I'm not sure how long of a time period this should be.  E. coli can double every
+  // // 17 minutes, so going for 12 hours without adjusting the biome for population changes
+  // // doesn't seem like that's going to work.
+  // int ticks_per_step = 60 * 60;  // one hour
+  // VectorXd num_doublings = ticks_per_step / avg_division_ticks;
+  // for (int i = 0; i < populations_.size(); ++i)
+  //   populations_[i] *= pow(2, num_doublings[i])
+
+  // // What if we run the simulation until we get two division periods that are about the same length,
+  // // and we declare that the doubling time, double that cell's population, and apply some amount of population growth
+  // // to everyone else prorated by the amount of doubling they had?
 }
 
 CellObserver::CellObserver(const Prokaryotic& pro) :
@@ -521,6 +572,18 @@ std::string CellObserver::formatProteinStateChanges(const std::string& prefix) c
   oss << prefix << "Protein synthesis: " << protein_synth_.vals_.transpose() << endl;
   oss << prefix << "Protein denaturing: " << protein_den_.vals_.transpose() << endl;
   oss << prefix << "Proteasome action: " << proteasome_action_.vals_.transpose() << endl;
+  return oss.str();
+}
+
+std::string CellObserver::formatDivisionHours(const std::string& prefix) const
+{
+  ostringstream oss;
+  oss << prefix;
+  for (size_t i = 0; i < num_ticks_per_division_period_.size(); ++i) {
+    // if (i > 0)
+    //   oss << " ";
+    oss << " " << num_ticks_per_division_period_[i] / (60 * 60);
+  }
   return oss.str();
 }
 
@@ -558,6 +621,15 @@ std::string CellObserver::formatTransformationFlux(const std::string& prefix) co
   return oss.str();  
 }
 
+double CellObserver::averageDivisionHours() const
+{
+  double avg = 0;
+  for (size_t i = 0; i < num_ticks_per_division_period_.size(); ++i)
+    avg += num_ticks_per_division_period_[i] / (60 * 60.);
+  avg /= num_ticks_per_division_period_.size();
+  return avg;
+}
+
 void CellObserver::tick()
 {
   transformation_flux_.vals_.setZero();
@@ -565,6 +637,8 @@ void CellObserver::tick()
   protein_synth_.vals_.setZero();
   protein_den_.vals_.setZero();
   proteasome_action_.vals_.setZero();
+  
+  num_ticks_since_last_division_++;
 }
 
 void CellObserver::recordProteasomeAction(int target_idx_, double num_to_remove)
@@ -580,6 +654,12 @@ void CellObserver::recordProteinSynthAndDen(const MoleculeVals& flux)
     if (flux[i] < 0)
       protein_den_[i] -= flux[i];
   }
+}
+
+void CellObserver::recordDivision()
+{
+  num_ticks_per_division_period_.push_back(num_ticks_since_last_division_);
+  num_ticks_since_last_division_ = 0;
 }
 
 void CellObserver::recordReactionFlux(const MoleculeVals& flux, int protein_idx)
@@ -634,7 +714,14 @@ void Cell::applyReactionResult(const MoleculeVals& flux, int protein_idx)
 
 void Cell::divide()
 {
+  // Eventually: This should be determined by making lots of proteins that are necessary for dividing,
+  // then simulate some amount of consumption of ATP by those proteins as they do their job.
+  // But for now we want the bare minimum thing that looks like simulation of population growth.
   cout << "Dividing." << endl;
+  cytosol_contents_.vals_ /= 2;
+  cytosol_contents_denatured_.vals_ /= 2;
+  membrane_contents_.vals_ /= 2;
+  obs_.recordDivision();
 }
 
 std::string Cell::_str() const
@@ -808,6 +895,7 @@ DNAThen::DNAThen(const Prokaryotic& pro, Cell& cell, const std::string& thenstr)
 
   if (tokens.size() == 1 && tokens[0] == "divide()") {
     operation_type_ = "divide";
+    return;
   }
   
   for (size_t i = 0; i < tokens.size(); ++i) {
@@ -985,23 +1073,23 @@ void DNA::tick(Cell& cell)
   std::random_device rd;
   std::mt19937 g(rd());
   if (random_indices.empty()) {
-    cout << "Initializing random_indices." << endl;
-    cout << "synthesis_reactions_.size(): " << synthesis_reactions_.size() << endl;
+    // cout << "Initializing random_indices." << endl;
+    // cout << "synthesis_reactions_.size(): " << synthesis_reactions_.size() << endl;
     for (size_t i = 0; i < synthesis_reactions_.size(); ++i)
       random_indices.push_back(i);
   }
 
-  cout << "random_indices: " << endl;
-  for (size_t i = 0; i < random_indices.size(); ++i) {
-    cout << " " << random_indices[i] << endl;
-  }
-  cout << "synthesis_reactions: " << endl;
-  for (size_t i = 0; i < synthesis_reactions_.size(); ++i) {
-    if (synthesis_reactions_[i])
-      cout << " " << i << " catalyzed by " << synthesis_reactions_[i]->protein_name_ << endl;
-    else
-      cout << " " << i << " empty slot" << endl;
-  }
+  // cout << "random_indices: " << endl;
+  // for (size_t i = 0; i < random_indices.size(); ++i) {
+  //   cout << " " << random_indices[i] << endl;
+  // }
+  // cout << "synthesis_reactions: " << endl;
+  // for (size_t i = 0; i < synthesis_reactions_.size(); ++i) {
+  //   if (synthesis_reactions_[i])
+  //     cout << " " << i << " catalyzed by " << synthesis_reactions_[i]->protein_name_ << endl;
+  //   else
+  //     cout << " " << i << " empty slot" << endl;
+  // }
     
   assert(random_indices.size() == synthesis_reactions_.size());
   std::shuffle(random_indices.begin(), random_indices.end(), g);
@@ -1119,14 +1207,20 @@ std::vector<MoleculeType::ConstPtr> Prokaryotic::moleculeTypes() const
   return std::vector<MoleculeType::ConstPtr>(molecule_types_.begin(), molecule_types_.end());
 }
 
+void Prokaryotic::step()
+{
+  assert(biomes_.size() == 1);
+  assert(cells_.size() == 1);
+  for (auto biome : biomes_)
+    biome->step();
+}
+
 void Prokaryotic::tick()
 {
   assert(biomes_.size() == 1);
   assert(cells_.size() == 1);
   for (auto biome : biomes_)
     biome->tick();
-  for (auto cell : cells_)
-    cell->tick(*biomes_[0]);
 }
 
 void Prokaryotic::applyConfig(const std::string& path)

@@ -169,23 +169,6 @@ public:
   void tick(Cell& cell, int num_protein_copies) const;  
 };
 
-class Biome : public Printable
-{
-public:
-  typedef std::shared_ptr<Biome> Ptr;
-  typedef std::shared_ptr<const Biome> ConstPtr;
-
-  const Prokaryotic& pro_;
-  double m3_;
-  MoleculeVals concentrations_;  // mM
-  std::string name_;
-  
-  Biome(const Prokaryotic& pro, double m3, const std::string& name);
-  Biome(const Prokaryotic& pro, const YAML::Node& yaml);
-  std::string _str() const;
-  void tick();
-};
-
 class DNA;
 
 class DNAThen
@@ -272,16 +255,20 @@ public:
   MoleculeVals protein_synth_;
   MoleculeVals protein_den_;  // denaturing
   MoleculeVals proteasome_action_;  // denatured protein -> amino acids
-  
+  std::vector<double> num_ticks_per_division_period_;  // in ticks
+  int num_ticks_since_last_division_;
   
   CellObserver(const Prokaryotic& pro);
   void recordReactionFlux(const MoleculeVals& flux, int protein_idx);
   void recordProteinSynthAndDen(const MoleculeVals& flux);
-  void recordProteasomeAction(int target_idx_, double num_to_remove);  
+  void recordProteasomeAction(int target_idx_, double num_to_remove);
+  void recordDivision();
   void tick();
+  double averageDivisionHours() const;
   std::string formatTransformationFlux(const std::string& prefix = "") const;
   std::string formatProteinIOFlux(const std::string& prefix = "") const;
   std::string formatProteinStateChanges(const std::string& prefix = "") const;
+  std::string formatDivisionHours(const std::string& prefix = "") const;
 };
 
 class Cell : public Printable
@@ -316,6 +303,28 @@ public:
   void divide();
 };
 
+class Biome : public Printable
+{
+public:
+  typedef std::shared_ptr<Biome> Ptr;
+  typedef std::shared_ptr<const Biome> ConstPtr;
+
+  const Prokaryotic& pro_;
+  double m3_;
+  MoleculeVals concentrations_;  // mM
+  std::string name_;
+  // Once we have multiple biomes, these will need to be deep copies.
+  // For now we'll just use the cells_ in pro_.
+  std::vector<Cell::Ptr> cells_;
+  Eigen::VectorXd populations_;
+  
+  Biome(const Prokaryotic& pro, double m3, const std::string& name);
+  Biome(const Prokaryotic& pro, const YAML::Node& yaml);
+  std::string _str() const;
+  void tick();
+  void step();  
+};
+
 // Contains the whole simulation model
 // Data protection strategy: Data is stored as (non-const) Ptr, but is only handed out as ConstPtr.
 class Prokaryotic : public Printable
@@ -346,6 +355,7 @@ public:
   MoleculeVals numAA() const;
   
   void tick();
+  void step();
   std::string _str() const;
   void run();
 

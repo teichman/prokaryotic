@@ -398,11 +398,6 @@ TEST_CASE("Transcription factors and ribosome assignment")
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ADP", "", 0)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 0)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 0)));
-
-  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
-  pro.biomes_.push_back(biome);
-  biome->concentrations_["Amino acids"] = 200;
-  biome->concentrations_["ATP"] = 200;
   
   Cell::Ptr cell(new Cell(pro, "cell"));
   pro.cells_.push_back(cell);
@@ -410,6 +405,11 @@ TEST_CASE("Transcription factors and ribosome assignment")
   cell->membrane_permeabilities_["Amino acids"] = 1.0;  
   cell->membrane_permeabilities_["ATP"] = 1.0;
   cell->membrane_permeabilities_["ADP"] = 1.0;
+
+  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+  pro.biomes_.push_back(biome);
+  biome->concentrations_["Amino acids"] = 200;
+  biome->concentrations_["ATP"] = 200;
   
   // Start off with some ribosomes
   cell->cytosol_contents_["Ribosome"] = 1000;
@@ -424,6 +424,7 @@ TEST_CASE("Transcription factors and ribosome assignment")
   pro.tick();
   CHECK(cell->dna_->transcription_factors_["X"] == 1);
   CHECK(cell->dna_->transcription_factors_["Y"] == 1);
+  cout << cell->dna_->transcription_factors_.str("  ") << endl;
   CHECK(cell->dna_->transcription_factors_.vals_.sum() == 2);
 
   // As the num_amino_acids goes up, we get closer to the exact answer.  This is bc the num
@@ -458,12 +459,6 @@ TEST_CASE("Protein synthesis basics")
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 0)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 0)));
 
-  // Provide infinite AAs and ATP.
-  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
-  pro.biomes_.push_back(biome);
-  biome->concentrations_["Amino acids"] = 200;
-  biome->concentrations_["ATP"] = 200;
-
   Cell::Ptr cell(new Cell(pro, "cell"));
   pro.cells_.push_back(cell);
   // AAs and ATP come in through the membrane very fast.  ADP leaves very fast.
@@ -471,6 +466,12 @@ TEST_CASE("Protein synthesis basics")
   cell->membrane_permeabilities_["ATP"] = 1.0;
   cell->membrane_permeabilities_["ADP"] = 1.0;
 
+  // Provide infinite AAs and ATP.
+  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+  pro.biomes_.push_back(biome);
+  biome->concentrations_["Amino acids"] = 200;
+  biome->concentrations_["ATP"] = 200;
+  
   // Start off with some ribosomes
   cell->cytosol_contents_["Ribosome"] = 2e4;  // should get 10k each to ribosomes, X, and 2X.
 
@@ -627,12 +628,6 @@ TEST_CASE("Proteasome")
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "ATP", "", 0)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Phosphate", "", 0)));
 
-  // Provide infinite AAs and ATP.
-  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
-  pro.biomes_.push_back(biome);
-  biome->concentrations_["Amino acids"] = 200;
-  biome->concentrations_["ATP"] = 200;
-
   Cell::Ptr cell(new Cell(pro, "cell"));
   pro.cells_.push_back(cell);
   // AAs and ATP come in through the membrane very fast.  ADP leaves very fast.
@@ -640,6 +635,12 @@ TEST_CASE("Proteasome")
   cell->membrane_permeabilities_["ATP"] = 1.0;
   cell->membrane_permeabilities_["ADP"] = 1.0;
 
+  // Provide infinite AAs and ATP.
+  Biome::Ptr biome(new Biome(pro, 10, "Alkaline vents"));
+  pro.biomes_.push_back(biome);
+  biome->concentrations_["Amino acids"] = 200;
+  biome->concentrations_["ATP"] = 200;
+  
 
   SUBCASE("Rate of clearing denatured proteins")
   {
@@ -735,7 +736,7 @@ TEST_CASE("Full system so far")
   printHeader();
   Prokaryotic pro;
 
-  pro.applyConfig("config.yaml");
+  pro.applyConfig("2022-12-07-test_config.yaml");
   Cell::Ptr cell(new Cell(pro, "cell"));
   pro.cells_.push_back(cell);
 
@@ -809,7 +810,7 @@ TEST_CASE("DNAIf divide")
   pro.biomes_.push_back(biome);
   biome->concentrations_["Amino acids"] = 200;
   biome->concentrations_["ATP"] = 200;
-
+  
   // AAs and ATP come in through the membrane very fast.  ADP leaves very fast.
   cell->membrane_permeabilities_["Amino acids"] = 1.0;  
   cell->membrane_permeabilities_["ATP"] = 1.0;
@@ -827,8 +828,47 @@ TEST_CASE("DNAIf divide")
                                                                              "  - divide()\n"))));
 
   pro.tick();
+  CHECK(cell->cytosol_contents_["Ribosome"] == doctest::Approx(1e5 / 2).epsilon(0.01));
 
 }
+
+TEST_CASE("Biome step")
+{
+  printHeader();
+  Prokaryotic pro;
+
+  pro.applyConfig("config.yaml");
+  
+  Cell::Ptr cell(new Cell(pro, "cell"));
+  pro.cells_.push_back(cell);
+
+  // The cell is taking in things in the environment at some rate.  Nevermind how, for the moment.
+  cell->membrane_permeabilities_["Amino acids"] = 0.1;
+  cell->membrane_permeabilities_["Starch"] = 0.01;
+
+  // Start us off with some of each important molecule.
+  cell->cytosol_contents_["Amino acids"] = 6e7;  // 100 mM sounds typical
+  cell->cytosol_contents_["ATP"] = 6e6;  // 10 mM sounds typical, maybe a bit high
+  cell->cytosol_contents_["Phosphate"] = 6e6;
+  cell->cytosol_contents_["Starch"] = 6e6;
+  cell->cytosol_contents_["Glucose"] = 6e6;
+
+
+  int num_orig_atp = cell->cytosol_contents_["ATP"];
+  
+  // Dunno how much of these we need, we'll see where they end up at steady state.
+  cell->cytosol_contents_["ATP Synthase"] = 1e6;
+  cell->cytosol_contents_["Amylase"] = 1e3;
+  cell->cytosol_contents_["Ribosome"] = 3e4;
+  cell->cytosol_contents_["Proteasome"] = 1e6;
+
+  const YAML::Node& yaml = YAML::LoadFile("config.yaml");
+  for (const YAML::Node& dnaif : yaml["DNA"])
+    cell->addDNAIf(dnaif);
+
+  pro.step();
+}
+
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.
 // bc of the biome <> cell permeability math.

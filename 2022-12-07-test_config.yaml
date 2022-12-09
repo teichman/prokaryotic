@@ -1,6 +1,3 @@
-# TODO: Protein half-lives are typically 0.25 - 2 hours, which a bunch much longer than 3 hours.
-# See http://book.bionumbers.org/how-fast-do-rnas-and-proteins-degrade/
-
 MoleculeTable:
   - name: Amino acids
     symbol: brick
@@ -55,38 +52,16 @@ BiomeTable:
       Amino acids: 1
       Starch: 50
       
-# This is pretty janky but I guess will do for now.
-# Eventually this shouldn't be YAML, just a small DSL that is compiled into C++ objects representing the expressions.
-# if, else, =, +=, <, >.
-# Also it's weird to use "X" for the concentration of something in the if statement, and then "X" for the TF target.
-# They're totally different things.
 DNA:
-  - if: ATP Synthase > 3e4
+  - if: Ribosome > 30000
+    then:
+      - Ribosome = 0.0
+  - if: ATP Synthase > 30000
     then:
       - ATP Synthase = 0.0
-  - if: Amylase > 3e4
+  - if: Amylase > 30000
     then:
       - Amylase = 0.0
-  - if: Proteasome > 3e4
+  - if: Proteasome > 30000
     then:
       - Proteasome = 0.0
-  - if: Ribosome > 7e4
-    then:
-      - divide()
-
-
-  # - formula: 2 X + ATP -> R + ADP + Phosphate
-  #   protein: ATP Consumer
-  #   kcat: 1e-2
-  #   KMs:
-  #     X: 1e-1
-  #     ATP: 1e-3
-    # - name: ATP Consumer
-    # symbol: gear
-    # num-amino-acids: 5e3
-  # - name: X
-  #   symbol: X
-  #   daltons: 500
-  # - name: R
-  #   symbol: R
-  #   daltons: 1000
