@@ -629,6 +629,65 @@ std::string CellObserver::formatProteinIOFlux(const std::string& prefix) const
   return oss.str();
 }
 
+std::string CellObserver::formatTransformationFluxMat(const std::string& prefix) const
+{
+  ostringstream oss;
+
+  // normalize for num reactions that contributed to this flow from molecule i -> molecule j.
+  // e.g. we want to see 1 ATP -> 1 ADP + 1 P, no matter how many different reactions use ATP in this way.
+  ArrayXXd mat = transformation_flux_.vals_;
+  for (int i = 0; i < mat.rows(); ++i) {
+    for (int j = 0; j < mat.cols(); ++j) {
+      if (fabs(mat(i, j)) > 0) {
+        assert((transformation_flux_nr_.vals_(i, j) > 0));
+        mat(i, j) /= transformation_flux_nr_.vals_(i, j);
+      }
+    }
+  }
+
+  int max_num_chars = 0;
+  vector<string> molecules_to_use;
+  for (int i = 0; i < mat.rows(); ++i) {
+    if (mat.row(i).abs().sum() > 0) {
+      string display_name = pro_.molecule(i)->name_;
+      // std::replace(display_name.begin(), display_name.end(), ' ', '');
+      molecules_to_use.push_back(display_name);
+      max_num_chars = std::max<double>(max_num_chars, display_name.size());
+    }
+  }
+
+  // header
+  int col_width = 4;
+  vector<string> header_lines(col_width, std::string(col_width * molecules_to_use.size(), ' '));
+  // vector<vector<string>> header_lines(col_width, vector<string>(col_width * molecules_to_use.size()));  // row, col
+  for (size_t i = 0; i < molecules_to_use.size(); ++i) {
+    for (int j = 0; j < col_width; ++j) {
+      if (j < molecules_to_use[i].size()) {
+        header_lines[j][col_width * i + j] = molecules_to_use[i][j];
+      }
+    }
+  }
+
+  oss << prefix << std::string(max_num_chars+4, ' ');
+  for (size_t i = 0; i < header_lines[0].size(); ++i)
+    oss << "-";
+  oss << endl;
+  
+  for (const string& line : header_lines)
+    oss << prefix << std::string(max_num_chars+4, ' ') << line << endl;
+  
+  oss << prefix << std::string(max_num_chars+4, ' ');
+  for (size_t i = 0; i < header_lines[0].size(); ++i)
+    oss << "-";
+  oss << endl;
+  
+  
+  for (int i = 0; i < mat.rows(); ++i)
+    if (mat.row(i).abs().sum() > 0)
+      oss << prefix << "| " << std::setw(max_num_chars) << molecules_to_use[i] << " | " << mat.row(i) << endl;
+  return oss.str();
+}
+
 std::string CellObserver::formatTransformationFlux(const std::string& prefix) const
 {
   ostringstream oss;

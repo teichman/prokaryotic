@@ -269,6 +269,7 @@ public:
   void tick();
   double averageDivisionHours() const;
   std::string formatTransformationFlux(const std::string& prefix = "") const;
+  std::string formatTransformationFluxMat(const std::string& prefix = "") const;
   std::string formatProteinIOFlux(const std::string& prefix = "") const;
   std::string formatProteinStateChanges(const std::string& prefix = "") const;
   std::string formatDivisionHours(const std::string& prefix = "") const;

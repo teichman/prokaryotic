@@ -857,8 +857,10 @@ TEST_CASE("Biome step")
     cell->addDNAIf(dnaif);
 
   for (int i = 0; i < 10; ++i) {
+    cout << "\033[38;2;255;100;100m\u25A0\u25A0\u25A0\033[0m" << endl;
     cout << "STEP " << i << endl;
-    pro.step();    
+    pro.step();
+    cout << cell->obs_.formatTransformationFluxMat("    ") << endl;
     cout << cell->obs_.formatProteinIOFlux("    ") << endl;
     cout << cell->obs_.formatTransformationFlux("    ") << endl;
     cout << cell->obs_.formatProteinStateChanges("    ") << endl;
