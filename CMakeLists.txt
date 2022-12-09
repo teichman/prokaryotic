@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
 
 project(prokaryotic)
@@ -30,11 +29,18 @@ message("YAML directories: ${YAML_CPP_INCLUDE_DIRS}")
 
 include_directories(.)
 
-add_compile_options(-fno-omit-frame-pointer -fno-optimize-sibling-calls -O0)
-add_link_options(-fno-omit-frame-pointer -fno-optimize-sibling-calls -O0)
-
-# add_compile_options(-fsanitize=address)
-# add_link_options(-fsanitize=address)
+add_compile_options(-Wall -Werror)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  message("Mode: Debug")
+  add_compile_options(-fno-omit-frame-pointer -fno-optimize-sibling-calls -O0)
+  add_link_options(-fno-omit-frame-pointer -fno-optimize-sibling-calls -O0)
+  add_compile_options(-fsanitize=address)
+  add_link_options(-fsanitize=address)
+elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+  message("Mode: RelWithDebInfo")
+  add_compile_options(-O3)
+  add_link_options(-O3)
+endif()
 
 add_library(prokaryotic SHARED prokaryotic.h prokaryotic.cpp)
 target_link_libraries(prokaryotic Eigen3::Eigen fmt::fmt ${YAML_CPP_LIBRARIES})

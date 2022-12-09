@@ -737,8 +737,7 @@ TEST_CASE("Full system so far")
   Prokaryotic pro;
 
   pro.applyConfig("2022-12-07-test_config.yaml");
-  Cell::Ptr cell(new Cell(pro, "cell"));
-  pro.cells_.push_back(cell);
+  Cell::Ptr cell = pro.cells_[0];  
 
   // The cell is taking in things in the environment at some rate.  Nevermind how, for the moment.
   cell->membrane_permeabilities_["Amino acids"] = 0.1;
@@ -760,7 +759,7 @@ TEST_CASE("Full system so far")
   cell->cytosol_contents_["Ribosome"] = 1e5;
   cell->cytosol_contents_["Proteasome"] = 1e6;
 
-  const YAML::Node& yaml = YAML::LoadFile("config.yaml");
+  const YAML::Node& yaml = YAML::LoadFile("2022-12-07-test_config.yaml");
   for (const YAML::Node& dnaif : yaml["DNA"])
     cell->addDNAIf(dnaif);
 
@@ -801,7 +800,7 @@ TEST_CASE("DNAIf divide")
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Amino acids", "", 0)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Proteasome", "", 0, 1000)));
   pro.addMoleculeType(MoleculeType::Ptr(new MoleculeType(pro, "Ribosome", "", 0, 150000)));
-  
+
   Cell::Ptr cell(new Cell(pro, "cell"));
   pro.cells_.push_back(cell);
 
@@ -836,12 +835,9 @@ TEST_CASE("Biome step")
 {
   printHeader();
   Prokaryotic pro;
-
   pro.applyConfig("config.yaml");
+  Cell::Ptr cell = pro.cells_[0];
   
-  Cell::Ptr cell(new Cell(pro, "cell"));
-  pro.cells_.push_back(cell);
-
   // The cell is taking in things in the environment at some rate.  Nevermind how, for the moment.
   cell->membrane_permeabilities_["Amino acids"] = 0.1;
   cell->membrane_permeabilities_["Starch"] = 0.01;
@@ -852,9 +848,6 @@ TEST_CASE("Biome step")
   cell->cytosol_contents_["Phosphate"] = 6e6;
   cell->cytosol_contents_["Starch"] = 6e6;
   cell->cytosol_contents_["Glucose"] = 6e6;
-
-
-  int num_orig_atp = cell->cytosol_contents_["ATP"];
   
   // Dunno how much of these we need, we'll see where they end up at steady state.
   cell->cytosol_contents_["ATP Synthase"] = 1e6;

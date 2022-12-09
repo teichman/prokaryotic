@@ -453,6 +453,7 @@ MoleculeMat::MoleculeMat(const Prokaryotic& pro) :
 std::string MoleculeMat::_str() const
 {
   assert(false);
+  return "";
 }
 
 MoleculeVals MoleculeMat::row(const std::string& name) const
@@ -524,8 +525,11 @@ void Biome::step()
   }
   
   double num_hours = 12;
-  for (int i = 0; i < int(num_hours * 60 * 60); ++i)
+  for (int i = 0; i < int(num_hours * 60 * 60); ++i) {
+    if (i % 60*60 == 0)
+      cout << "." << std::flush;
     tick();
+  }
 
   // Get the average growth rates.
   VectorXd avg_division_ticks = VectorXd::Zero(cells_.size());
@@ -562,7 +566,8 @@ CellObserver::CellObserver(const Prokaryotic& pro) :
   protein_io_flux_(pro),
   protein_synth_(pro),
   protein_den_(pro),
-  proteasome_action_(pro)
+  proteasome_action_(pro),
+  num_ticks_per_division_period_(0)
 {
 }
 
@@ -706,8 +711,8 @@ void Cell::applyReactionResult(const MoleculeVals& flux, int protein_idx)
   double atp_p_balance = fabs(flux["ATP"] + flux["Phosphate"]);
   if (atp_adp_balance > 1e-6)
     cout << "flux " << endl << flux.str("  ") << endl;
-  assert(atp_adp_balance < 1e-6);
-  assert(atp_p_balance < 1e-6);
+  assert(atp_adp_balance < 1e-6); atp_adp_balance--;
+  assert(atp_p_balance < 1e-6); atp_p_balance--;
   cytosol_contents_.vals_ += flux.vals_;
   obs_.recordReactionFlux(flux, protein_idx);
 }
@@ -1244,6 +1249,10 @@ void Prokaryotic::applyConfig(const YAML::Node& yaml)
     addMoleculeType(mol);
   for (const YAML::Node& rxn : yaml["ReactionTable"])
     addReactionType(rxn);
+
+  // Eventually there will be multiple player cells here.
+  cells_.push_back(Cell::Ptr(new Cell(*this, "cell")));
+  
   for (const YAML::Node& biome : yaml["BiomeTable"])
     addBiome(biome);
 }
