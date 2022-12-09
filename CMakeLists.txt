@@ -22,9 +22,19 @@ if(APPLE)
   # link_directories(/opt/homebrew/Cellar/yaml-cpp/0.7.0/lib/)
   set(YAML_CPP_LIBRARIES "yaml-cpp")
   set(YAML_CPP_INCLUDE_DIRS "/opt/homebrew/Cellar/yaml-cpp/0.7.0/include")
+  # This looks like we are mixing library verisons, but:
+  #  https://github.com/zeromq/cppzmq
+  # "Any libzmq 4.x version is expected to work. DRAFT features may only work for the most recent tested version.
+  #  Currently explicitly tested libzmq versions are
+  #    4.2.0 (without DRAFT API)
+  #    4.3.4 (with and without DRAFT API)"
+  set(ZMQ_INCLUDE_DIRS "/opt/homebrew/Cellar/zeromq/4.3.4/include" "/opt/homebrew/Cellar/cppzmq/4.9.0/include/")
+  set(ZMQ_LIB_DIRS "/opt/homebrew/Cellar/zeromq/4.3.4/lib")
+  set(ZMQ_LIBRARIES "zmq")
 endif()
 
-include_directories(${YAML_CPP_INCLUDE_DIRS})
+include_directories(${YAML_CPP_INCLUDE_DIRS} ${ZMQ_INCLUDE_DIRS})
+link_directories(${YAML_CPP_INCLUDE_DIRS} ${ZMQ_LIB_DIRS})
 message("YAML directories: ${YAML_CPP_INCLUDE_DIRS}")
 
 include_directories(.)
@@ -41,7 +51,7 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
 endif()
 
 add_library(prokaryotic SHARED prokaryotic.h prokaryotic.cpp)
-target_link_libraries(prokaryotic Eigen3::Eigen fmt::fmt ${YAML_CPP_LIBRARIES})
+target_link_libraries(prokaryotic Eigen3::Eigen fmt::fmt ${YAML_CPP_LIBRARIES} ${ZMQ_LIBRARIES})
 
 # get_target_property(OUT prokaryotic LINK_LIBRARIES)
 # message("HELLO ${OUT}")
@@ -58,6 +68,12 @@ target_link_libraries(test prokaryotic Eigen3::Eigen ${YAML_CPP_LIBRARIES})
 
 add_executable(scratch_yaml scratch_yaml.cpp)
 target_link_libraries(scratch_yaml ${YAML_CPP_LIBRARIES})
+
+add_executable(scratch_zmq scratch_zmq.cpp)
+target_link_libraries(scratch_zmq ${ZMQ_LIBRARIES})
+
+add_executable(scratch_zmq2python scratch_zmq2python.cpp)
+target_link_libraries(scratch_zmq2python ${ZMQ_LIBRARIES})
 
 
 
