@@ -9,24 +9,15 @@ using namespace std;
 
 class MessageWrapper
 {
-public:
-  enum dtype {
-    ArrayXd=10,
-    ArrayXXd=11
-  };
-
-  vector<uint8_t> data_;
-  
-  MessageWrapper() {}
-  void append(uint8_t val) { data_.push_back(val); }
-  void append(int val) {
-    uint8_t* ptr = reinterpret_cast<uint8_t*>(&val);
-    for (int i = 0; i < 4; ++i)
-      data_.push_back(ptr[i]);
+public:  
+  MessageWrapper()
+  {
+    data_.push_back(13);  // magic number
   }
   
-  void append(const Eigen::ArrayXd& arr)
+  void addField(const std::string& name, const Eigen::ArrayXd& arr)
   {
+    append(name);
     append(dtype::ArrayXd);
     append((int)arr.size());
     uint8_t const *dptr = reinterpret_cast<uint8_t const *>(arr.data());
@@ -34,9 +25,10 @@ public:
       data_.push_back(dptr[i]);
   }
 
-  void append(const Eigen::ArrayXXd& arr)
+  void addField(const std::string& name, const Eigen::ArrayXXd& arr)
   {
-    append((uint8_t)dtype::ArrayXXd);
+    append(name);
+    append(dtype::ArrayXXd);
     append((int)arr.rows());
     append((int)arr.cols());
     uint8_t const *dptr = reinterpret_cast<uint8_t const *>(arr.data());
@@ -48,6 +40,33 @@ public:
   {
     return zmq::message_t(data_);
   }
+
+private:
+  enum dtype {
+    String=9,
+    ArrayXd=10,
+    ArrayXXd=11
+  };
+  
+  vector<uint8_t> data_;
+
+  void append(dtype val) { data_.push_back(val); }
+  
+  void append(int val)
+  {
+    uint8_t* ptr = reinterpret_cast<uint8_t*>(&val);
+    for (int i = 0; i < 4; ++i)
+      data_.push_back(ptr[i]);
+  }
+  
+  void append(const std::string& str)
+  {
+    append((int)str.size());
+    uint8_t const* ptr = reinterpret_cast<uint8_t const*>(str.data());
+    for (size_t i = 0; i < str.size(); ++i)
+      data_.push_back(ptr[i]);
+  }
+    
 };
 
 
@@ -94,13 +113,18 @@ int main()
       // MessageWrapper mw;
       // mw.append(data);
 
-      Eigen::ArrayXXd data = Eigen::ArrayXXd::Zero(2, 2);
-      data(0, 0) = 1;
-      data(0, 1) = 2;
-      data(1, 0) = 3;
-      data(1, 1) = 4;
+
       MessageWrapper mw;
-      mw.append(data);
+      Eigen::ArrayXXd mat = Eigen::ArrayXXd::Zero(2, 2);
+      mat(0, 0) = 1;
+      mat(0, 1) = 2;
+      mat(1, 0) = 3;
+      mat(1, 1) = 4;
+      mw.addField("matrix_something", mat);
+      Eigen::ArrayXd vec = Eigen::ArrayXd::Zero(4);
+      vec(0) = 13;
+      vec(3) = 42;
+      mw.addField("vector_something", vec);
       
       zmq::message_t msg(mw);
       
