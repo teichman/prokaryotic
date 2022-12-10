@@ -1,5 +1,6 @@
 #pragma once
 
+#include <comms.h>
 #include <limits>
 #include <Eigen/Dense>
 #include <cassert>
@@ -357,6 +358,7 @@ public:
   size_t moleculeIdx(const std::string& name) const;
   const std::string& moleculeName(size_t idx) const { return molecule_types_[idx]->name_; }
   std::vector<MoleculeType::ConstPtr> moleculeTypes() const;
+  std::vector<std::string> moleculeNames() const;
   size_t numMoleculeTypes() const { return molecule_types_.size(); }
   bool hasMolecule(const std::string& name) const { return molecule_map_.find(name) != molecule_map_.end(); }
   MoleculeVals numAA() const;
@@ -375,6 +377,8 @@ public:
   std::vector<ReactionType::Ptr> reaction_types_;
   
 private:
+  Comms comms_;
+  
   MoleculeType::Ptr _molecule(const std::string& name) const {
     assert(hasMolecule(name));
     return molecule_map_.at(name);

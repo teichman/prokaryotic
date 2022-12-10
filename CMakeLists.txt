@@ -50,11 +50,11 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
   add_link_options(-O3 -g)
 endif()
 
-add_library(prokaryotic SHARED prokaryotic.h prokaryotic.cpp)
-target_link_libraries(prokaryotic Eigen3::Eigen fmt::fmt ${YAML_CPP_LIBRARIES} ${ZMQ_LIBRARIES})
+add_library(comms SHARED comms.cpp)
+target_link_libraries(comms Eigen3::Eigen fmt::fmt ${YAML_CPP_LIBRARIES} ${ZMQ_LIBRARIES})
 
-# get_target_property(OUT prokaryotic LINK_LIBRARIES)
-# message("HELLO ${OUT}")
+add_library(prokaryotic SHARED prokaryotic.h prokaryotic.cpp)
+target_link_libraries(prokaryotic Eigen3::Eigen fmt::fmt ${YAML_CPP_LIBRARIES} ${ZMQ_LIBRARIES} comms)
 
 # add_executable(run prokaryotic.h run.cpp)
 # target_link_libraries(run prokaryotic Eigen3::Eigen ${YAML_CPP_LIBRARIES})
@@ -62,18 +62,11 @@ target_link_libraries(prokaryotic Eigen3::Eigen fmt::fmt ${YAML_CPP_LIBRARIES} $
 add_executable(test prokaryotic.h doctest.h test.cpp)
 target_link_libraries(test prokaryotic Eigen3::Eigen ${YAML_CPP_LIBRARIES})
 
-# add_executable(debug_snippet prokaryotic.h doctest.h debug_snippet.cpp)
-# target_link_libraries(debug_snippet prokaryotic Eigen3::Eigen ${YAML_CPP_LIBRARIES})
-
-
 add_executable(scratch_yaml scratch_yaml.cpp)
 target_link_libraries(scratch_yaml ${YAML_CPP_LIBRARIES})
 
-add_executable(scratch_zmq scratch_zmq.cpp)
-target_link_libraries(scratch_zmq ${ZMQ_LIBRARIES})
-
 add_executable(scratch_zmq2python scratch_zmq2python.cpp)
-target_link_libraries(scratch_zmq2python ${ZMQ_LIBRARIES} Eigen3::Eigen)
+target_link_libraries(scratch_zmq2python comms)
 
 
 
@@ -91,3 +84,15 @@ target_link_libraries(scratch_zmq2python ${ZMQ_LIBRARIES} Eigen3::Eigen)
 # find_package(Protobuf REQUIRED)
 # include_directories(${PROTOBUF_INCLUDE_DIR})
 # protobuf_generate_cpp(PROTO_SRC PROTO_HEADER proto/molecule_type.proto)
+
+
+############################################################
+# other crap that is probably done
+############################################################
+
+# add_executable(scratch_zmq scratch_zmq.cpp)
+# target_link_libraries(scratch_zmq ${ZMQ_LIBRARIES})
+
+# add_executable(debug_snippet prokaryotic.h doctest.h debug_snippet.cpp)
+# target_link_libraries(debug_snippet prokaryotic Eigen3::Eigen ${YAML_CPP_LIBRARIES})
+

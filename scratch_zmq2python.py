@@ -1,4 +1,6 @@
 from rich import print
+from rich.console import Console
+from rich.table import Table
 import numpy as np
 import struct
 import ipdb
@@ -14,9 +16,11 @@ print("Connected.")
 
 
 class MessageInterpreter:
-    String = 9
-    ArrayXd = 10
-    ArrayXXd = 11
+
+    String = 10
+    Strings = 11
+    ArrayXd = 12
+    ArrayXXd = 13
     
     def __init__(self):
         pass
@@ -28,15 +32,16 @@ class MessageInterpreter:
         result = {}
         idx = 1
         while True:
-            name, val, idx = self.interpretField(msg, idx)
+            name, val, idx = self._interpretField(msg, idx)
             result[name] = val
             print(f"{idx=} {len(msg)=}")
             if idx == len(msg):
                 break
 
         return result
-            
-    def interpretField(self, msg, idx):
+
+    def _interpretField(self, msg, idx):
+        # field_name, idx = self._interpretString(self, msg, idx)
         field_name_length = struct.unpack_from('i', msg, offset=idx)[0]
         idx += 4
         field_name = struct.unpack_from(f'{field_name_length}s', msg, offset=idx)[0].decode("UTF-8")
@@ -46,14 +51,35 @@ class MessageInterpreter:
         print(f"{typecode=}")
         idx += 1
         if typecode == self.ArrayXXd:
-            val, idx = self.interpretArrayXXd(msg, idx)
-            return field_name, val, idx
-        if typecode == self.ArrayXd:
-            val, idx = self.interpretArrayXd(msg, idx)
-            return field_name, val, idx
-        assert False
+            val, idx = self._interpretArrayXXd(msg, idx)
+        elif typecode == self.ArrayXd:
+            val, idx = self._interpretArrayXd(msg, idx)
+        elif typecode == self.Strings:
+            val, idx = self._interpretStrings(msg, idx)
+        else:
+            assert False
+            
+        return field_name, val, idx
 
-    def interpretArrayXd(self, msg, idx):
+    def _interpretString(self, msg, idx):
+        length = struct.unpack_from('i', msg, offset=idx)[0]
+        idx += 4
+        string = struct.unpack_from(f'{length}s', msg, offset=idx)[0].decode("UTF-8")
+        print(f"{string=}")
+        idx += length
+        return string, idx
+    
+    def _interpretStrings(self, msg, idx):
+        num_strings = struct.unpack_from('i', msg, offset=idx)[0]
+        idx += 4
+        print(f"{num_strings=}")
+        strings = []
+        for _ in range(num_strings):
+            string, idx = self._interpretString(msg, idx)
+            strings.append(string)
+        return strings, idx
+    
+    def _interpretArrayXd(self, msg, idx):
         rows = struct.unpack_from('i', msg, offset=idx)[0]
         idx += 4
         print(f"{rows=}")
@@ -62,7 +88,7 @@ class MessageInterpreter:
         idx += rows*8
         return vec, idx
 
-    def interpretArrayXXd(self, msg, idx):
+    def _interpretArrayXXd(self, msg, idx):
         rows, cols = struct.unpack_from('ii', msg, offset=idx)
         idx += 8
         print(f"{rows=} {cols=}")
@@ -79,5 +105,29 @@ while True:
     print(f"Received msg: {type(msg)} {msg}")
     result = mi.interpret(msg)
     print(f"{result=}")
-    print(result['matrix_something'])
+
+    piot = Table(title="Protein IO", show_lines=False, highlight=True, row_styles=["", ""])
+    piot.add_column("", justify="center", style="cyan", no_wrap=False)
+    for mname in result["molecule_names"]:
+        # col_display_name = mname.replace(' ', '\n')
+        col_display_name = '\n'.join([s[:7] for s in mname.split(' ')])
+        piot.add_column(col_display_name, justify="center", style="cyan", no_wrap=False, width=8)
+
+    for idx, mname in enumerate(result["molecule_names"]):
+        mat = result["protein_io_flux"]
+        entries = [mname]
+        for val in mat[idx, :]:
+            if val > 0:
+                entries.append(f'[green]{val:4.2}[/]')
+            elif val < 0:
+                entries.append(f'[red]{val:4.2}[/]')
+            else:
+                entries.append('-')
+                
+        # entries += [f'{val:4.2}' if abs(val) > 0 else '' for val in mat[idx, :]] 
+        piot.add_row(*entries)
+
+    console = Console()
+    console.print(piot)
+    
     time.sleep(0.1)

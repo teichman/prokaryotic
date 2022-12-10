@@ -1359,12 +1359,25 @@ std::vector<MoleculeType::ConstPtr> Prokaryotic::moleculeTypes() const
   return std::vector<MoleculeType::ConstPtr>(molecule_types_.begin(), molecule_types_.end());
 }
 
+std::vector<std::string> Prokaryotic::moleculeNames() const
+{
+  vector<string> names;
+  for (auto mt : molecule_types_)
+    names.push_back(mt->name_);
+  return names;
+}
+
 void Prokaryotic::step()
 {
   assert(biomes_.size() == 1);
   assert(cells_.size() == 1);
   for (auto biome : biomes_)
     biome->step();
+
+  MessageWrapper msg;
+  msg.addField("molecule_names", moleculeNames());
+  msg.addField("protein_io_flux", cells_[0]->obs_.protein_io_flux_.vals_);
+  comms_.broadcast(msg);
 }
 
 void Prokaryotic::tick()
