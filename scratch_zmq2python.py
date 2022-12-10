@@ -75,34 +75,9 @@ class MessageInterpreter:
 mi = MessageInterpreter()
 
 while True:
-    #  Wait for next request from client
-    time.sleep(1)
-    print("Waiting for a msg.")
     msg = socket.recv()
     print(f"Received msg: {type(msg)} {msg}")
     result = mi.interpret(msg)
     print(f"{result=}")
     print(result['matrix_something'])
-
-    
-    # # https://docs.python.org/3/library/struct.html#format-characters
-    # typecode = struct.unpack('B', msg[:1])[0]
-    # print(f"{typecode}")
-    # msg = msg[1:]
-
-    # rows = struct.unpack('i', msg[:4])[0]
-    # print(f"{rows=}")
-    # msg = msg[4:]
-
-    # values = struct.unpack('d'*rows, msg[:8*rows])
-    # print(f"{values=}")
-
-    
-    
-    # breakpoint()
-
-    #  Do some 'work'
-
-
-    # #  Send reply back to client
-    # socket.send_string("World")
+    time.sleep(0.1)
