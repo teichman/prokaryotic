@@ -9,6 +9,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(fmt REQUIRED)
+find_package(cppzmq)  # https://github.com/zeromq/cppzmq
 
 # # This is a really great trick to inspect cmake.  Thanks chatGPT.
 # get_cmake_property(_variableNames VARIABLES)

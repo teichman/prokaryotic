@@ -641,9 +641,6 @@ std::string oomStr2(double num)
     return fmt::format("{:2.1e}", num);
 }
 
-
-
-
 std::string oomStr(double num)
 {
   if (num < 1e-9)
@@ -1377,6 +1374,9 @@ void Prokaryotic::step()
   MessageWrapper msg;
   msg.addField("molecule_names", moleculeNames());
   msg.addField("protein_io_flux", cells_[0]->obs_.protein_io_flux_.vals_);
+  msg.addField("proteasome_action", cells_[0]->obs_.proteasome_action_.vals_);
+  msg.addField("cytosol_contents_hist_avg", cells_[0]->obs_.cytosolContentsHistoryAvg().vals_);
+  msg.addField("cytosol_concentration_hist_avg", countsToConcentrations(cells_[0]->obs_.cytosolContentsHistoryAvg(), cells_[0]->um3_).vals_);
   comms_.broadcast(msg);
 }
 
