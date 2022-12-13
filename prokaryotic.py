@@ -9,10 +9,14 @@ import pickle
 import sys
 from rich.markdown import Markdown
 from rich import print
+from rich.tree import Tree
 from rich.console import Console
 from rich.table import Table
 from rich.live import Live
+from rich.text import Text
+from rich.layout import Layout
 from rich.syntax import Syntax
+from rich.panel import Panel
 import numpy as np
 import struct
 import ipdb
@@ -113,9 +117,7 @@ class KeypressListener:
         self.start()
 
     def __del__(self):
-        print("KeypressListener.__del__ starting")
         self.thread.join()
-        print("KeypressListener.__del__ done")
         
     def _loopfn(self):
         while self.running:
@@ -132,7 +134,6 @@ class KeypressListener:
         self.thread.start()
 
     def stop(self):
-        print(f"KeypressListener.stop")
         self.running = False
         self.thread.join()
     
@@ -157,9 +158,7 @@ class Comms:
         self.start()
 
     def __del__(self):
-        print("Comms.__del__ starting")
         self.thread.join()
-        print("Comms.__del__ done")
         
     # blocking
     def receive(self):
@@ -176,7 +175,6 @@ class Comms:
         logger.log("started thread for Comms")
         
     def stop(self):
-        print(f"KeypressListener.stop")
         self.running = False
         self.thread.join()
         
@@ -197,85 +195,122 @@ class Comms:
 class View:
     def __init__(self):
         self.console = Console()
-        self.grid = None
-        self.thread = None
-        self.start()
+        self.layout = Layout(ratio=0.95, name="layout")
+        self.layout.split_column(Layout(name="header", ratio=1),
+                                 Layout(name="mainrow", ratio=10),
+                                 Layout(name="footer", ratio=1))
+        self.layout["mainrow"].split_row(Layout(name="cmds", ratio=1),
+                                         Layout(name="main", ratio=4),
+                                         Layout(name="log", ratio=1))
 
-    def __del__(self):
-        print("View.__del__ starting")
-        self.thread.join()
-        print("View.__del__ done")
+        self.draw_cmds()
+        self.draw_header()
+        self.draw_placeholder_in_main()
+
+        #self.start()
+
+    # def __del__(self):
+    #     print("View.__del__ starting")
+    #     self.thread.join()
+    #     print("View.__del__ done")
         
-    def _loopfn(self):
-        while self.running:
-            if self.grid:
-                self.console.clear()
-                self.console.print(self.grid)
-                self.grid = None
-            time.sleep(0.1)
+    # def _loopfn(self):
+    #     while self.running:
+    #         if self.grid:
+    #             self.console.clear()
+    #             self.console.print(self.grid)
+    #             self.grid = None
+    #         time.sleep(0.1)
                 
-        # with Live("loading...", refresh_per_second=4, screen=True) as live:
-        #     while True:
-        #         if self.grid:
-        #             live.update(self.grid, refresh=True)
-        #             self.grid = None
-        #         time.sleep(0.4)
+    # def start(self):
+    #     self.running = True
+    #     self.thread = threading.Thread(target=self._loopfn)
+    #     self.thread.start()
+    #     logger.log("started thread")
 
-    def start(self):
-        self.running = True
-        self.thread = threading.Thread(target=self._loopfn)
-        self.thread.start()
-        logger.log("started thread")
+    # def stop(self):
+    #     print(f"View.stop")
+    #     self.running = False
+    #     self.thread.join()
 
-    def stop(self):
-        print(f"KeypressListener.stop")
-        self.running = False
-        self.thread.join()
-
-    def display_dna_programming(self):
-        syntax = Syntax.from_path("config.yaml")
-        self.grid = syntax
-
-    def display_protein_io(self):
+    def draw_placeholder_in_main(self):
+        self.layout["mainrow"]["main"].update(Panel("Nothing to see here yet...",
+                                                    border_style="dim white"))
+        
+    
+    def draw_protein_io(self):
         self.grid = self.generate_grid(self.msgdict)
+        self.layout["mainrow"]["main"].update(Panel(self.grid,
+                                                    border_style="dim white",
+                                                    title='[bold]Protein IO[/]'))
+        self.draw()
+
+    def draw_dna_programming(self):
+        layout = Layout(name="dna programming")
+        layout.split_column(Layout(Panel(Syntax.from_path("dna.yaml"))),
+                            Layout(Panel("DNA programming file: aoeu/snth.yaml"), ratio=0.1))
+        self.layout["mainrow"]["main"].update(Panel(Syntax.from_path("dna.yaml"),
+                                                    title="[bold]DNA Programming (dna.yaml)[/]",
+                                                    border_style="dim white"))
+        self.draw()
+        
+    def draw(self):
+        self.console.clear()
+        self.console.print(self.layout)
+
+    def draw_cmds(self):
+        cmds = Tree("Commands")
+        cmds.add("p :: Protein IO")
+        cmds.add("d :: View DNA Programming")
+        cmds.add("A :: Advance simulation")
+        # cmds.add("s :: Molecule Stats")
+        cmds.add("q :: Quit")
+        self.layout["mainrow"]["cmds"].update(Panel(cmds, border_style="dim white"))
+        self.draw()
+
+    def draw_header(self):
+        # self.layout["header"].update(Panel(title="Prokaryotic v0.0001", style="bold white on blue"))
+        # self.layout["header"].update(Text(text="\n\nProkaryotic v0.0001", style="bold white on blue", justify='center'))
+        self.layout["header"].update(Text(text="", style=None, justify='center'))
+        self.draw()
         
     def display(self, msgdict):
         self.msgdict = msgdict
         self.grid = self.generate_grid(self.msgdict)
         logger.log(f"display sees self.grid: {self.grid} {id(self.grid)}")
+        self.draw()
                 
     def generate_grid(self, msgdict):
         # Cytosol contents table
         cct = Table(title="Molecule stats", title_style="black on rgb(255,255,255)", show_lines=False, highlight=True, row_styles=["", ""])
         cct.add_column("Molecule", justify="right", style="cyan", min_width=10)
+        cct.add_column("Key".replace(' ', '\n'), style='cyan')
         cct.add_column("Cytosol Contents (#)".replace(' ', '\n'), justify="center", style="magenta")
         cct.add_column("Cytosol Concentrations (mM)".replace(' ', '\n'), justify="center", style="magenta")
         for idx, mname in enumerate(msgdict["molecule_names"]):
             cct.add_row(mname,
+                        f"C^{chr(ord('a') + idx)}",
                         val2str(msgdict["cytosol_contents_hist_avg"][idx]),
                         val2str(msgdict["cytosol_concentration_hist_avg"][idx]))
 
         # Protein IO table
         piot = Table(title="Protein IO", title_style="black on rgb(255,255,255)", show_lines=False, highlight=True, row_styles=["", ""])
         piot.add_column("", justify="right", style="cyan", no_wrap=True)  # min_width=10, width=10
-        for mname in msgdict["molecule_names"]:
-            # col_display_name = mname.replace(' ', '\n')
+        col_indices_to_keep = []
+        for idx, mname in enumerate(msgdict["molecule_names"]):
+            if msgdict["protein_io_flux"][:, idx].sum() == 0:
+                continue
+            col_indices_to_keep.append(idx)
             max_num_chars = 100
             col_display_name = '\n'.join([s[:max_num_chars] for s in mname.split(' ')])
             piot.add_column(col_display_name, justify="center", style="cyan", width=8)
+        cols_stripped = msgdict["protein_io_flux"][:, col_indices_to_keep]
 
         for idx, mname in enumerate(msgdict["molecule_names"]):
-            mat = msgdict["protein_io_flux"]
+            if msgdict["protein_io_flux"][idx, :].sum() == 0:
+                continue
             entries = [mname]
-            entries += [val2str_colored(val) for val in mat[idx, :]]
-            # for val in mat[idx, :]:
-            #     if val > 0:
-            #         entries.append(f'[green]{val:4.2}[/]')
-            #     elif val < 0:
-            #         entries.append(f'[red]{val:4.2}[/]')
-            #     else:
-            #         entries.append('-')
-            # entries += [f'{val:4.2}' if abs(val) > 0 else '' for val in mat[idx, :]] 
+            entries += [val2str_colored(val) for val in cols_stripped[idx, :]]
             piot.add_row(*entries)
 
         num_grid_cols = 2
@@ -286,8 +321,6 @@ class View:
         # grid.add_column("")
         grid.add_row(cct)
         grid.add_row(piot)
-
-        grid.add_row("Prokaryotic v0.1", style="white on blue")
         
         return grid
 
@@ -297,9 +330,10 @@ class Controller:
         self.view = View()
         self.comms = Comms(self.handle_msgdict, msgfile)
         self.keypress_listener = KeypressListener(self.handle_keypress)
+        
 
     def __del__(self):
-        print(f"Controller.__del__")
+        pass
         
     def handle_keypress(self, key):
         logger.log(f"Controller.handle_keypress got {key}")
@@ -307,12 +341,15 @@ class Controller:
             self.running = False
             return 'stop'
         elif key == 'd':
-            self.view.display_dna_programming()
+            self.view.draw_dna_programming()
         elif key == 'p':
-            self.view.display_protein_io()
-        elif key == 'm':
-            usermsg = Prompt.ask("Message to send")
-            print(f"Sending {usermsg}")
+            self.view.draw_protein_io()
+        # elif key == 'm':
+        #     usermsg = Prompt.ask("Message to send")
+        #     print(f"Sending {usermsg}")
+        #     self.view.draw()
+        # elif key == 's':
+        #     self.view.draw_molecule_stats()
         
     def run(self):
         self.running = True
@@ -320,9 +357,8 @@ class Controller:
         while self.running:
             time.sleep(0.1)
 
-        self.view.stop()
+        #self.view.stop()
         self.comms.stop()
-        print(f"Controller.run is ending.")
 
     def handle_msgdict(self, msgdict):
         logger.log(f"In Controller.handle_msgdict with {msgdict}")
@@ -396,6 +432,4 @@ if __name__ == "__main__":
     else:
         controller = Controller(args.msg)
         controller.run()
-        print("Waiting for everything to clean up.")
-        del controller
     
