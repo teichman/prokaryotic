@@ -72,4 +72,6 @@ void Comms::waitForResponses()
   assert(result.has_value());
   //assert(*result == 0);
   cout << "Got response: " << *result << " with msg: " << msg << endl;
+  string msgstr = msg.to_string();
+  cout << "string representation: " << msgstr << endl;
 }

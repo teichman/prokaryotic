@@ -149,15 +149,17 @@ class Comms:
                 print(self.msgdict)
         
         self.ctx = zmq.Context()
-        self.socket = self.ctx.socket(zmq.SUB)
-        #socket.bind("tcp://*:5555")
-        self.socket.connect("tcp://127.0.0.1:53269")
-        self.socket.subscribe("")
+        self.sub_sock = self.ctx.socket(zmq.SUB)
+        self.sub_sock.connect("tcp://127.0.0.1:53269")
+        self.sub_sock.subscribe("")
+        self.pub_sock = self.ctx.socket(zmq.PUB)
+        self.pub_sock.connect("tcp://127.0.0.1:53270")
         self.mi = MessageInterpreter()
         logger.log("Connected.")
         self.start()
 
     def advance(self):
+        self.pub_sock.send(bytes("advance", 'utf-8'))
         # Tell the server that we're done.
         # Include a copy of DNA programming every time, since it may have changed.
         pass
@@ -167,7 +169,7 @@ class Comms:
         
     # blocking
     def receive(self):
-        msg = self.socket.recv()
+        msg = self.sub_sock.recv()
         # print(f"Received msg: {type(msg)} {msg}")
         result = self.mi.interpret(msg)
         # print(f"{result=}")
