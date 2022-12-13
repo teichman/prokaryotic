@@ -1,3 +1,5 @@
+import copy
+from rich.prompt import Prompt
 import readchar 
 from pynput.keyboard import Key, Listener
 import threading
@@ -10,6 +12,7 @@ from rich import print
 from rich.console import Console
 from rich.table import Table
 from rich.live import Live
+from rich.syntax import Syntax
 import numpy as np
 import struct
 import ipdb
@@ -228,9 +231,17 @@ class View:
         print(f"KeypressListener.stop")
         self.running = False
         self.thread.join()
+
+    def display_dna_programming(self):
+        syntax = Syntax.from_path("config.yaml")
+        self.grid = syntax
+
+    def display_protein_io(self):
+        self.grid = self.generate_grid(self.msgdict)
         
     def display(self, msgdict):
-        self.grid = self.generate_grid(msgdict)
+        self.msgdict = msgdict
+        self.grid = self.generate_grid(self.msgdict)
         logger.log(f"display sees self.grid: {self.grid} {id(self.grid)}")
                 
     def generate_grid(self, msgdict):
@@ -295,6 +306,13 @@ class Controller:
         if key == 'q':
             self.running = False
             return 'stop'
+        elif key == 'd':
+            self.view.display_dna_programming()
+        elif key == 'p':
+            self.view.display_protein_io()
+        elif key == 'm':
+            usermsg = Prompt.ask("Message to send")
+            print(f"Sending {usermsg}")
         
     def run(self):
         self.running = True
