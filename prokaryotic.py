@@ -1,3 +1,4 @@
+import readchar 
 from pynput.keyboard import Key, Listener
 import threading
 import math
@@ -14,6 +15,8 @@ import struct
 import ipdb
 import time
 import zmq
+
+g_stop = False
 
 class MessageInterpreter:
 
@@ -99,9 +102,48 @@ class MessageInterpreter:
         return mat, idx
 
 
-class Comms:
-    def __init__(self, callback=None):
+
+class KeypressListener:
+    
+    def __init__(self, callback):
         self.callback = callback
+        self.start()
+
+    def __del__(self):
+        print("KeypressListener.__del__ starting")
+        self.thread.join()
+        print("KeypressListener.__del__ done")
+        
+    def _loopfn(self):
+        while self.running:
+            key = readchar.readkey()
+            retval = self.callback(key)
+            # We can't just call stop() because readchar.readkey() is blocking, ugh really?
+            # Anyway this gets it done.
+            if retval == 'stop':
+                self.running = False
+    
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._loopfn)
+        self.thread.start()
+
+    def stop(self):
+        print(f"KeypressListener.stop")
+        self.running = False
+        self.thread.join()
+    
+    
+class Comms:
+    def __init__(self, callback=None, msgfile=None):
+        self.callback = callback
+        self.msgdict = None
+        self.msgfile = msgfile
+        if self.msgfile:
+            with open(self.msgfile, 'rb') as f:
+                self.msgdict = pickle.load(f)
+                print(self.msgdict)
+        
         self.ctx = zmq.Context()
         self.socket = self.ctx.socket(zmq.SUB)
         #socket.bind("tcp://*:5555")
@@ -109,7 +151,12 @@ class Comms:
         self.socket.subscribe("")
         self.mi = MessageInterpreter()
         logger.log("Connected.")
+        self.start()
 
+    def __del__(self):
+        print("Comms.__del__ starting")
+        self.thread.join()
+        print("Comms.__del__ done")
         
     # blocking
     def receive(self):
@@ -120,12 +167,24 @@ class Comms:
         return result
 
     def start(self):
+        self.running = True
         self.thread = threading.Thread(target=self._loopfn)
         self.thread.start()
         logger.log("started thread for Comms")
-    
+        
+    def stop(self):
+        print(f"KeypressListener.stop")
+        self.running = False
+        self.thread.join()
+        
     def _loopfn(self):
-        while True:
+        while self.running:
+            if self.msgdict:
+                self.callback(self.msgdict)
+                logger.log("Processing cached msg and exiting Comms._loopfn")
+                logger.log(self.msgdict)
+                return
+                
             msgdict = self.receive()
             logger.log("Comms got a msg")
             if self.callback:
@@ -133,30 +192,46 @@ class Comms:
                 self.callback(msgdict)
     
 class View:
-    def __init__(self, start=False):
+    def __init__(self):
         self.console = Console()
         self.grid = None
         self.thread = None
-        if start:
-            self.start()
+        self.start()
 
-    def _loopfn(self):        
-        with Live("loading...", refresh_per_second=4, screen=True) as live:
-            while True:
-                if self.grid:
-                    live.update(self.grid, refresh=True)
-                    self.grid = None
-                time.sleep(0.4)
+    def __del__(self):
+        print("View.__del__ starting")
+        self.thread.join()
+        print("View.__del__ done")
+        
+    def _loopfn(self):
+        while self.running:
+            if self.grid:
+                self.console.clear()
+                self.console.print(self.grid)
+                self.grid = None
+            time.sleep(0.1)
+                
+        # with Live("loading...", refresh_per_second=4, screen=True) as live:
+        #     while True:
+        #         if self.grid:
+        #             live.update(self.grid, refresh=True)
+        #             self.grid = None
+        #         time.sleep(0.4)
 
     def start(self):
+        self.running = True
         self.thread = threading.Thread(target=self._loopfn)
         self.thread.start()
         logger.log("started thread")
+
+    def stop(self):
+        print(f"KeypressListener.stop")
+        self.running = False
+        self.thread.join()
         
     def display(self, msgdict):
         self.grid = self.generate_grid(msgdict)
         logger.log(f"display sees self.grid: {self.grid} {id(self.grid)}")
-        time.sleep(0.4)
                 
     def generate_grid(self, msgdict):
         # Cytosol contents table
@@ -207,17 +282,32 @@ class View:
 
     
 class Controller:
-    def __init__(self, view):
-        self.view = view
-        self.comms = Comms(self.handle_msgdict)
-        self.comms.start()
-    
+    def __init__(self, msgfile=None):
+        self.view = View()
+        self.comms = Comms(self.handle_msgdict, msgfile)
+        self.keypress_listener = KeypressListener(self.handle_keypress)
+
+    def __del__(self):
+        print(f"Controller.__del__")
+        
+    def handle_keypress(self, key):
+        logger.log(f"Controller.handle_keypress got {key}")
+        if key == 'q':
+            self.running = False
+            return 'stop'
+        
     def run(self):
-        while True:
+        self.running = True
+        
+        while self.running:
             time.sleep(0.1)
 
+        self.view.stop()
+        self.comms.stop()
+        print(f"Controller.run is ending.")
+
     def handle_msgdict(self, msgdict):
-        logger.log("handle_msgdict")
+        logger.log(f"In Controller.handle_msgdict with {msgdict}")
         self.view.display(msgdict)
         
 def val2str(val):
@@ -242,7 +332,7 @@ class Logger:
         self.f = open(path, 'w')
 
     def log(self, msg):
-        self.f.write(msg + '\n')
+        self.f.write(f"{msg}\n")
 
     def __del__(self):
         self.f.close()
@@ -276,18 +366,18 @@ if __name__ == "__main__":
             logger.log(f"Saved message to {args.savemsg}")
         sys.exit(0)
 
-    elif args.msg:
-        with open(args.msg, 'rb') as f:
-            msgdict = pickle.load(f)
-        view = View(start=True)
-        while True:
-            logger.log("Calling display()")
-            view.display(msgdict)
-            time.sleep(0.4)
+    # elif args.msg:
+    #     with open(args.msg, 'rb') as f:
+    #         msgdict = pickle.load(f)
+    #     view = View(start=True)
+    #     while True:
+    #         logger.log("Calling display()")
+    #         view.display(msgdict)
+    #         time.sleep(0.4)
 
     else:
-         view = View(start=True)
-         controller = Controller(view)
-         controller.run()
-
+        controller = Controller(args.msg)
+        controller.run()
+        print("Waiting for everything to clean up.")
+        del controller
     
