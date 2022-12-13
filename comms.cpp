@@ -3,6 +3,15 @@
 
 using namespace std;
 
+void MessageWrapper::addField(const std::string& name, double val)
+{
+  append(name);
+  append(dtype::Double);
+  uint8_t const *dptr = reinterpret_cast<uint8_t const *>(val);
+  for (int i = 0; i < 8; ++i)
+    data_.push_back(dptr[i]);
+}
+
 void MessageWrapper::addField(const std::string& name, const Eigen::ArrayXd& arr)
 {
   append(name);
@@ -65,13 +74,13 @@ Comms::Comms() :
   sock_sub_.set(zmq::sockopt::subscribe, "");
 }
 
-void Comms::waitForResponses()
+string Comms::waitForResponses()
 {
   zmq::message_t msg;
   std::optional<size_t> result = sock_sub_.recv(msg, zmq::recv_flags::none);
   assert(result.has_value());
-  //assert(*result == 0);
   cout << "Got response: " << *result << " with msg: " << msg << endl;
   string msgstr = msg.to_string();
   cout << "string representation: " << msgstr << endl;
+  return msgstr;
 }

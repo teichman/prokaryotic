@@ -19,3 +19,6 @@ DNA:
   - if: Ribosome > 5e5
     then:
       - divide()
+  - if: Ribosome > 1
+    then:
+      - all = 0

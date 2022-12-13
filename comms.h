@@ -12,13 +12,15 @@ public:
   MessageWrapper() {  data_.push_back(13); }  // magic number
   operator zmq::message_t () const { return zmq::message_t(data_); }
   size_t size() const { return data_.size(); }
-  
+
+  void addField(const std::string& name, double val);
   void addField(const std::string& name, const Eigen::ArrayXd& arr);
   void addField(const std::string& name, const Eigen::ArrayXXd& arr);
   void addField(const std::string& name, const std::vector<std::string>& strings);
 
 private:
   enum dtype {
+    Double=8,
     String=10,
     Strings=11,
     ArrayXd=12,
@@ -41,7 +43,7 @@ public:
   void broadcast(const MessageWrapper& msg) { sock_pub_.send(msg, zmq::send_flags::none); }
   // blocking
   void receive();
-  void waitForResponses();
+  std::string waitForResponses();
 
 private:
   zmq::context_t ctx_;

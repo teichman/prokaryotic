@@ -527,8 +527,12 @@ void Biome::step()
   
   double num_hours = 24;
   for (int i = 0; i < int(num_hours * 60 * 60); ++i) {
-    if (i % (60*60) == 0)
+    if (i % (60*60) == 0) { 
       cout << "." << std::flush;
+      MessageWrapper msg;
+      msg.addField("step_progress", (double)i / (num_hours * 60 * 60));
+      pro_.comms_.broadcast(msg);
+    }
     tick();
   }
 
@@ -1330,7 +1334,22 @@ void Prokaryotic::run()
     step();
     double seconds = double(std::chrono::duration_cast<std::chrono::nanoseconds>(HRC::now() - start).count()) * 1e-9;
     cout << "seconds / step: " << seconds << endl;
-    comms_.waitForResponses();
+
+    cout << cells_[0]->obs_.cytosolContentsHistoryAvg().str("  ") << endl;
+    
+    string response = comms_.waitForResponses();
+    applyClientResponse(response);
+  }
+}
+
+void Prokaryotic::applyClientResponse(const std::string& response)
+{
+  cells_[0]->dna_->dna_ifs_.clear();
+  cout << "Cleared DNA programming." << endl;
+  YAML::Node yaml = YAML::Load(response);
+  for (const YAML::Node& dnaif : yaml["DNA"]) {
+    cout << "Applying dnaif: " << dnaif << endl;
+    cells_[0]->addDNAIf(dnaif);
   }
 }
 

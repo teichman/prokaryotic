@@ -158,11 +158,21 @@ class Comms:
         logger.log("Connected.")
         self.start()
 
+    def send_msg(self, msg):
+        self.pub_sock.send(bytes(msg, 'utf-8'))
+
+    def send_file(self, path):
+        with open(path, 'r') as f:
+            msg = f.readlines()
+            msg = ''.join(msg)
+        self.send_msg(msg)
+        
     def advance(self):
-        self.pub_sock.send(bytes("advance", 'utf-8'))
         # Tell the server that we're done.
         # Include a copy of DNA programming every time, since it may have changed.
-        pass
+        # For now, the only action is to send dna.yaml up to the server,
+        # and it interprets that as "i'm ready to advance"
+        self.send_file('dna.yaml')
         
     def __del__(self):
         self.thread.join()
@@ -304,12 +314,16 @@ class View:
         # self.layout["header"].update(Text(text="\n\nProkaryotic v0.0001", style="bold white on blue", justify='center'))
         self.layout["header"].update(Text(text="", style=None, justify='center'))
         self.draw()
-        
-    def display(self, msgdict):
+
+    def new_msgdict(self, msgdict):
         self.msgdict = msgdict
-        self.grid = self.generate_grid(self.msgdict)
-        logger.log(f"display sees self.grid: {self.grid} {id(self.grid)}")
-        self.draw()
+        self.draw_protein_io()
+        
+    # def display(self, msgdict):
+    #     self.msgdict = msgdict
+    #     self.grid = self.generate_grid(self.msgdict)
+    #     logger.log(f"display sees self.grid: {self.grid} {id(self.grid)}")
+    #     self.draw()
                 
     def generate_grid(self, msgdict):
         # Cytosol contents table
@@ -402,7 +416,7 @@ class Controller:
 
     def handle_msgdict(self, msgdict):
         logger.log(f"In Controller.handle_msgdict with {msgdict}")
-        self.view.display(msgdict)
+        self.view.new_msgdict(msgdict)
         
 def val2str(val):
     if val == 0:

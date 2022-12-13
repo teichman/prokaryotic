@@ -367,6 +367,7 @@ public:
   void step();
   std::string _str() const;
   void run();
+  void applyClientResponse(const std::string& response);
 
 //private:
   std::vector<MoleculeType::Ptr> molecule_types_;
