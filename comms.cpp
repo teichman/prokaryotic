@@ -54,9 +54,22 @@ void MessageWrapper::append(const std::vector<std::string>& strings)
 }
 
 Comms::Comms() :
-  sock_(ctx_, zmq::socket_type::pub)
+  sock_pub_(ctx_, zmq::socket_type::pub),
+  sock_sub_(ctx_, zmq::socket_type::sub)
 {
-  sock_.bind("tcp://127.0.0.1:53269");
-  string last_endpoint = sock_.get(zmq::sockopt::last_endpoint);
-  std::cout << "Connecting to " << last_endpoint << std::endl;
+  sock_pub_.bind("tcp://127.0.0.1:53269");
+  std::cout << "Connecting sock_pub_ to " << sock_pub_.get(zmq::sockopt::last_endpoint) << std::endl;
+  
+  sock_sub_.bind("tcp://127.0.0.1:53270");
+  std::cout << "Connecting sock_sub_ to " << sock_sub_.get(zmq::sockopt::last_endpoint) << std::endl;
+  sock_sub_.set(zmq::sockopt::subscribe, "");
+}
+
+void Comms::waitForResponses()
+{
+  zmq::message_t msg;
+  std::optional<size_t> result = sock_sub_.recv(msg, zmq::recv_flags::none);
+  assert(result.has_value());
+  //assert(*result == 0);
+  cout << "Got response: " << *result << " with msg: " << msg << endl;
 }

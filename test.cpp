@@ -855,6 +855,7 @@ TEST_CASE("Biome step")
   
   for (const YAML::Node& dnaif : yaml["DNA"])
     cell->addDNAIf(dnaif);
+  
 
   for (int i = 0; i < 10; ++i) {
     cout << "\033[38;2;255;100;100m\u25A0\u25A0\u25A0\033[0m" << endl;

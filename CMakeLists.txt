@@ -69,6 +69,9 @@ target_link_libraries(scratch_yaml ${YAML_CPP_LIBRARIES})
 add_executable(scratch_zmq2python scratch_zmq2python.cpp)
 target_link_libraries(scratch_zmq2python comms)
 
+add_executable(scratch_py2cpp scratch_py2cpp.cpp)
+target_link_libraries(scratch_py2cpp comms)
+
 
 
 ############################################################

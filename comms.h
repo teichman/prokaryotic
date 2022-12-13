@@ -37,12 +37,15 @@ class Comms
 {
 public:
   Comms();
-  void broadcast(const MessageWrapper& msg) { sock_.send(msg, zmq::send_flags::none); }
+  ~Comms() { sock_pub_.close(); sock_sub_.close(); }
+  void broadcast(const MessageWrapper& msg) { sock_pub_.send(msg, zmq::send_flags::none); }
   // blocking
   void receive();
+  void waitForResponses();
 
 private:
   zmq::context_t ctx_;
-  zmq::socket_t sock_;
+  zmq::socket_t sock_pub_;
+  zmq::socket_t sock_sub_;
 };
 

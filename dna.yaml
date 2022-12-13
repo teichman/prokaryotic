@@ -1,0 +1,21 @@
+# This is pretty janky but I guess will do for now.
+# Eventually this shouldn't be YAML, just a small DSL that is compiled into C++ objects representing the expressions.
+# if, else, =, +=, <, >.
+# Also it's weird to use "X" for the concentration of something in the if statement, and then "X" for the TF target.
+# They're totally different things.
+DNA:
+  - if: ATP Synthase > 1e9
+    then:
+      - ATP Synthase = 0.01
+  - if: Amylase > 3e4
+    then:
+      - Amylase = 0.0
+  - if: Proteasome > 3e4
+    then:
+      - Proteasome = 0.0
+  - if: ATP > 6e6
+    then:
+      - ADP Synthase = 0.0
+  - if: Ribosome > 5e5
+    then:
+      - divide()

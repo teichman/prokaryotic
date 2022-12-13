@@ -157,6 +157,11 @@ class Comms:
         logger.log("Connected.")
         self.start()
 
+    def advance(self):
+        # Tell the server that we're done.
+        # Include a copy of DNA programming every time, since it may have changed.
+        pass
+        
     def __del__(self):
         self.thread.join()
         
@@ -199,13 +204,19 @@ class View:
         self.layout.split_column(Layout(name="header", ratio=1),
                                  Layout(name="mainrow", ratio=10),
                                  Layout(name="footer", ratio=1))
-        self.layout["mainrow"].split_row(Layout(name="cmds", ratio=1),
+        self.layout["mainrow"].split_row(Layout(name="left_sidebar", ratio=1),
                                          Layout(name="main", ratio=4),
                                          Layout(name="log", ratio=1))
+        self.layout["mainrow"]["left_sidebar"].split_column(Layout(name="cmds"),
+                                                            Layout(name="metadata"))
+
+        self.mname_map = dict()
+        self.msgdict = None
 
         self.draw_cmds()
         self.draw_header()
         self.draw_placeholder_in_main()
+        self.draw_planetary_metadata()
 
         #self.start()
 
@@ -236,8 +247,27 @@ class View:
     def draw_placeholder_in_main(self):
         self.layout["mainrow"]["main"].update(Panel("Nothing to see here yet...",
                                                     border_style="dim white"))
+
+    def draw_planetary_metadata(self):
+        pm = self.layout["mainrow"]["left_sidebar"]["metadata"]
+        st = Table()
+        st.add_column("Species")
+        st.add_column("Doubling\ntime\n(hours)")
+        st.add_row("E. coli", "7.3")
+        st.add_row("S. streptococcus", "4.52")
+        pm.update(Panel(st,
+                        title="Planetary metadata",
+                        border_style="dim white"))
+        self.draw()
+
+    def mname_to_idx(self, mname):
+        return self.msgdict["molecule_names"].index(mname)
         
-    
+    def draw_transformation_chain(self, key):
+        mname = self.mname_map[key]
+        midx = self.mname_to_idx(mname)
+        logger.log(f"Drawing transformation chain for {mname}, molecule idx {midx}")
+        
     def draw_protein_io(self):
         self.grid = self.generate_grid(self.msgdict)
         self.layout["mainrow"]["main"].update(Panel(self.grid,
@@ -262,10 +292,9 @@ class View:
         cmds = Tree("Commands")
         cmds.add("p :: Protein IO")
         cmds.add("d :: View DNA Programming")
-        cmds.add("A :: Advance simulation")
-        # cmds.add("s :: Molecule Stats")
+        cmds.add("a :: Advance simulation")
         cmds.add("q :: Quit")
-        self.layout["mainrow"]["cmds"].update(Panel(cmds, border_style="dim white"))
+        self.layout["mainrow"]["left_sidebar"]["cmds"].update(Panel(cmds, border_style="dim white"))
         self.draw()
 
     def draw_header(self):
@@ -287,11 +316,17 @@ class View:
         cct.add_column("Key".replace(' ', '\n'), style='cyan')
         cct.add_column("Cytosol Contents (#)".replace(' ', '\n'), justify="center", style="magenta")
         cct.add_column("Cytosol Concentrations (mM)".replace(' ', '\n'), justify="center", style="magenta")
+        cct.add_column("Proteasome\nAction\n(Avg #/sec)", justify="center", style="magenta")
+        self.mname_map.clear()
         for idx, mname in enumerate(msgdict["molecule_names"]):
+            key = chr(ord('A') + idx)
+            self.mname_map[key] = mname
             cct.add_row(mname,
-                        f"C^{chr(ord('a') + idx)}",
+                        f"{key}",
                         val2str(msgdict["cytosol_contents_hist_avg"][idx]),
-                        val2str(msgdict["cytosol_concentration_hist_avg"][idx]))
+                        val2str(msgdict["cytosol_concentration_hist_avg"][idx]),
+                        val2str(msgdict["proteasome_action"][idx]))
+            
 
         # Protein IO table
         piot = Table(title="Protein IO", title_style="black on rgb(255,255,255)", show_lines=False, highlight=True, row_styles=["", ""])
@@ -314,11 +349,7 @@ class View:
             piot.add_row(*entries)
 
         num_grid_cols = 2
-        # grid = Table.grid(*([""] * num_grid_cols))
-        # title="Prokaryotic v0.1", title_style="white on blue"
         grid = Table(style="on black", show_header=False, show_edge=False)
-        # grid.add_column("")
-        # grid.add_column("")
         grid.add_row(cct)
         grid.add_row(piot)
         
@@ -334,9 +365,10 @@ class Controller:
 
     def __del__(self):
         pass
-        
+
     def handle_keypress(self, key):
-        logger.log(f"Controller.handle_keypress got {key}")
+        # C^a comes through with ord(key) == 1.
+        # logger.log(f"Controller.handle_keypress got {key}")
         if key == 'q':
             self.running = False
             return 'stop'
@@ -344,6 +376,12 @@ class Controller:
             self.view.draw_dna_programming()
         elif key == 'p':
             self.view.draw_protein_io()
+        elif len(key) == 1 and ord(key) >= ord('A') and ord(key) <= ord('Z'):
+            self.view.draw_transformation_chain(key)
+        elif key == 'a':
+            self.comms.advance()
+        # elif key == "":
+        #     self.view.draw_protein_io()
         # elif key == 'm':
         #     usermsg = Prompt.ask("Message to send")
         #     print(f"Sending {usermsg}")

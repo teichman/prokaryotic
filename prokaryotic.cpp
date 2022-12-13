@@ -1327,15 +1327,10 @@ void Prokaryotic::run()
   while(true)
   {
     auto start = HRC::now();
-    tick();
+    step();
     double seconds = double(std::chrono::duration_cast<std::chrono::nanoseconds>(HRC::now() - start).count()) * 1e-9;
-    cout << str() << endl;
-    cout << "seconds / tick: " << seconds << endl;
-    cout << "ticks / second: " << 1.0 / seconds << endl;
-    
-    // cout << "Press RET to continue." << endl;
-    // std::cin.get();
-    //std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    cout << "seconds / step: " << seconds << endl;
+    comms_.waitForResponses();
   }
 }
 
