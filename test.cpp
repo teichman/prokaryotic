@@ -872,6 +872,39 @@ TEST_CASE("Biome step")
   CHECK(avg["ATP"] + avg["ADP"] > 6e6);
 }
 
+TEST_CASE("ATP starvation due to reaction ordering")
+{
+  Prokaryotic pro;
+
+  const YAML::Node& yaml = YAML::LoadFile("2022-12-14-test_config.yaml");
+  pro.applyConfig(yaml);
+  Cell::Ptr cell = pro.cells_[0];
+  
+  cell->membrane_permeabilities_["Amino acids"] = 1.0;
+  cell->membrane_permeabilities_["Starch"] = 0.01;
+  cell->membrane_permeabilities_["Phosphate"] = 0.01;
+
+  cell->cytosol_contents_["Amino acids"] = 6e7;  // 100 mM sounds typical
+  cell->cytosol_contents_["ATP"] = 6e6;  // 10 mM sounds typical, maybe a bit high
+  cell->cytosol_contents_["Phosphate"] = 6e6;
+  cell->cytosol_contents_["Starch"] = 6e6;
+  cell->cytosol_contents_["Glucose"] = 6e6;
+  cell->cytosol_contents_["ATP Synthase"] = 1e7;
+  cell->cytosol_contents_["Amylase"] = 1e3;
+  cell->cytosol_contents_["Ribosome"] = 1e4; 
+  cell->cytosol_contents_["Proteasome"] = 3e4;
+  
+  for (const YAML::Node& dnaif : yaml["DNA"])
+    cell->addDNAIf(dnaif);
+
+  for (int i = 0; i < 10000; ++i) {
+    pro.tick();
+  }
+
+  cout << cell->cytosol_contents_.str("  ") << endl;
+  CHECK(cell->cytosol_contents_["ATP"] > doctest::Approx(0));
+}
+
 
 // We expect this cell to remain static - running tick() a lot shouldn't change anything, e.g.
 // bc of the biome <> cell permeability math.
