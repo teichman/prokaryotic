@@ -39,7 +39,7 @@ MoleculeTable:
     daltons: 180.156
   - name: ADP Synthase
     num-amino-acids: 5e3
-    half-life-hours: 1.0  # magic!  This lets us synthesize fresh ATP/ADP, and then goes away when we have enough.
+    half-life-hours: 99999999  # magic!  This lets us synthesize fresh ATP/ADP, and then goes away when we have enough.
 
 ReactionTable:
   # Magical fresh ATP synthesis reaction.  I just made this bullshit up entirely.

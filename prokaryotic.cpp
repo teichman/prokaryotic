@@ -867,10 +867,13 @@ void Cell::applyReactionResult(const MoleculeVals& flux, int protein_idx)
 
 void Cell::divide()
 {
+  
   // Eventually: This should be determined by making lots of proteins that are necessary for dividing,
   // then simulate some amount of consumption of ATP by those proteins as they do their job.
   // But for now we want the bare minimum thing that looks like simulation of population growth.
   cout << "Dividing." << endl;
+  cout << "before: " << endl;
+  cout << obs_.cytosolContentsHistoryAvg().str("  ") << endl;
   cytosol_contents_.vals_ /= 2;
 
   // // Uh I have no way to produce ATP/ADP right now, shit.
@@ -881,6 +884,8 @@ void Cell::divide()
   cytosol_contents_denatured_.vals_ /= 2;
   membrane_contents_.vals_ /= 2;
   obs_.recordDivision();
+  cout << "after: " << endl;
+  cout << obs_.cytosolContentsHistoryAvg().str("  ") << endl;
 }
 
 std::string Cell::_str() const
@@ -993,8 +998,12 @@ DNAIf::DNAIf(const Prokaryotic& pro, Cell& cell, const YAML::Node& yaml) :
   cell_(cell)
 {
   initializeFromString(yaml["if"].as<string>());
-  for (const YAML::Node& thenstr : yaml["then"]) {
-    thens_.push_back(DNAThen::Ptr(new DNAThen(pro_, cell_, thenstr.as<string>())));
+  for (const YAML::Node& y : yaml["then"]) {
+    if (y.Type() == YAML::NodeType::Map) {
+      subifs_.push_back(DNAIf::Ptr(new DNAIf(pro_, cell_, y)));
+    }
+    else
+      thens_.push_back(DNAThen::Ptr(new DNAThen(pro_, cell_, y.as<string>())));
   }
 }
 
@@ -1007,6 +1016,7 @@ DNAIf::DNAIf(const Prokaryotic& pro, Cell& cell, const std::string& ifstr) :
 
 void DNAIf::initializeFromString(const std::string& ifstr)
 {
+  cout << "DNAIf::initializeFromString using str: " << ifstr << endl;
   vector<string> tokens = tokenizeSimple(ifstr);
   
   for (size_t i = 0; i < tokens.size(); ++i) {

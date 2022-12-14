@@ -13,12 +13,14 @@ DNA:
   - if: Proteasome > 1
     then:
       - Proteasome = 0.0
-  - if: ATP > 1e8
+  - if: ATP > 1e9
     then:
       - ADP Synthase = 0.0
   - if: Ribosome > 5e4
     then:
-      - divide()
+      - if: ADP > 1e6
+        then:
+          - divide()
   # - if: Ribosome > 1
   #   then:
   #     - all = 0
