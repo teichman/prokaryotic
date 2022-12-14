@@ -15,7 +15,7 @@ int main(int argc, char** argv)
   // The cell is taking in things in the environment at some rate.  Nevermind how, for the moment.
   cell->membrane_permeabilities_["Amino acids"] = 1.0;
   cell->membrane_permeabilities_["Starch"] = 0.01;
-  cell->membrane_permeabilities_["Phosphate"] = 0.01;
+  cell->membrane_permeabilities_["Phosphate"] = 0;  // Can't let this stuff leak out.  Also in real life it doesn't.
 
   // Start us off with some of each important molecule.
   cell->cytosol_contents_["Amino acids"] = 6e7;  // 100 mM sounds typical

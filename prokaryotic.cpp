@@ -152,6 +152,10 @@ void ReactionType::computeGrad(const Cell& cell, int num_protein_copies)
   
   grad_.vals_ = (outputs_.vals_ - inputs_.vals_) * rate * num_protein_copies;
 
+  // if (protein_name_ == "ATP Synthase") {
+  //   cout << "ATP Synthase rate: " << rate << " num_protein_copies: " << num_protein_copies << " grad_: " << grad_.vals_.transpose() << endl;
+  // }
+
   // if (protein_name_ == "Ribosome") {
   //   cout << "Ribosome reaction flux before" << endl;
   //   cout << flux.str("  ") << endl;
@@ -173,6 +177,10 @@ void ReactionType::computeGrad(const Cell& cell, int num_protein_copies)
 
 void ReactionType::apply(Cell& cell) const
 {
+  // if (protein_name_ == "ATP Synthase") {
+  //   cout << "Applying ATP Synthase grad: " << grad_.vals_.transpose() << endl;
+  // }
+  
   cell.applyReactionResult(grad_, protein_idx_);
 }
 
@@ -566,14 +574,15 @@ void Biome::step(Comms& comms)
     cell->obs_.cytosol_contents_denatured_history_.clear();
   }
   
-  double num_hours = 24 * 5;
+  double num_hours = 24 * 3;
   int num_ticks = num_hours * 60 * 60;
+  int progress_update_period = std::max(10000, num_ticks / 20);
   for (int i = 0; i < num_ticks; ++i) {
     if (i % (60*60) == 0) {
       cout << "." << std::flush;
       //cout << cells_[0]->cytosol_contents_.str("  ") << endl;
     }
-    if (i % (num_ticks / 20) == 0) {
+    if (i % progress_update_period == 0) {
       MessageWrapper msg;
       msg.addField("step_progress", (double)i / (num_hours * 60 * 60));
       comms.broadcast(msg);
@@ -984,6 +993,14 @@ void Cell::tick(const Biome& biome)
 {
   obs_.tick();
   obs_.recordCytosolContents(cytosol_contents_, cytosol_contents_denatured_);
+
+  // cout << "Phosphate: " << cytosol_contents_["Phosphate"] << endl;
+  // cout << "ADP: " << cytosol_contents_["ADP"] << endl;
+  // cout << "ATP: " << cytosol_contents_["ATP"] << endl;
+  // cout << "Phosphate + ATP: " << cytosol_contents_["Phosphate"] + cytosol_contents_["ATP"] << endl;
+  // if (cytosol_contents_["Phosphate"] + cytosol_contents_["ATP"] < 1.1e7) {
+  //   assert(false);
+  // }
   
   // Passive membrane permeations
   // Should make this depend on cell volume (once the volume changes..)
@@ -1172,12 +1189,18 @@ void Cell::scaleNegativeGradientComponents(const MoleculeVals& scalefactors)
 
   for (auto rt : pro_.reaction_types_) {
     double scale_to_apply = 1.0;
+    int limiting_factor = -1;
     for (int midx = 0; midx < rt->grad_.size(); ++midx)
-      if (rt->grad_[midx] < 0)
-        scale_to_apply = std::min(scale_to_apply, scalefactors[midx]);
+      if (rt->grad_[midx] < 0) {
+        if (scalefactors[midx] < scale_to_apply) {
+          limiting_factor = midx;
+          scale_to_apply = scalefactors[midx];
+        }
+      }
     if (scale_to_apply < 1.0) {
       rt->grad_.vals_ *= scale_to_apply;
-      //cout << "Scaled back " << rt->protein_name_ << " reaction speed by " << scale_to_apply << endl;
+      // cout << "Scaled back " << rt->protein_name_ << " reaction speed by " << scale_to_apply
+      //      << " due to limiting factor " << pro_.moleculeName(limiting_factor) << endl;
     }
   }
 

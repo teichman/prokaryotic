@@ -42,16 +42,21 @@ MoleculeTable:
     half-life-hours: 99999999  # magic!  This lets us synthesize fresh ATP/ADP, and then goes away when we have enough.
 
 ReactionTable:
-  # Magical fresh ATP synthesis reaction.  I just made this bullshit up entirely.
-  - formula: Glucose + 10 ATP -> 12 ADP + 10 Phosphate  
+  # Magical fresh ATP & phosphate synthesis reaction.  I just made this bullshit up entirely
+  # bc right now we have no other way to regenerate ADP and phosphate when the cell divides.
+  - formula: Glucose + 10 ATP -> 12 ADP + 20 Phosphate  
     protein: ADP Synthase
-    kcat: 3
+    kcat: 1
     KMs:
       Glucose: 1e-1
       ATP: 1e-2
   - formula: Glucose + 30 ADP + 30 Phosphate -> 30 ATP
     protein: ATP Synthase
-    kcat: 30  # This says 3 but that seems too slow.  https://www.varsitytutors.com/biochemistry-help/atp-synthase
+    # https://www.varsitytutors.com/biochemistry-help/atp-synthase
+    # https://biologydictionary.net/atp-synthase/
+    # 100 molecules of ATP / second.
+    # With a product of 30 ATP above that means kcat is ~3.3.
+    kcat: 3.3
     KMs:
       Glucose: 1e-1
       ADP: 1e-2
@@ -68,7 +73,7 @@ BiomeTable:
     concentrations:
       Amino acids: 100
       Phosphate: 1
-      Starch: 50
+      Starch: 0.1
       
 # This is pretty janky but I guess will do for now.
 # Eventually this shouldn't be YAML, just a small DSL that is compiled into C++ objects representing the expressions.

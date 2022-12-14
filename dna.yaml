@@ -4,23 +4,28 @@
 # Also it's weird to use "X" for the concentration of something in the if statement, and then "X" for the TF target.
 # They're totally different things.
 DNA:
-  - if: ATP Synthase > 1e9
+  - if: ATP Synthase > 3e4
     then:
-      - ATP Synthase = 0.01
+      - ATP Synthase = 0.0
   - if: Amylase > 3e4
     then:
       - Amylase = 0.0
-  - if: Proteasome > 1
+  - if: Proteasome > 3e4
     then:
       - Proteasome = 0.0
-  - if: ATP > 1e9
+  - if: ADP > 1e9
     then:
       - ADP Synthase = 0.0
-  # - if: Ribosome > 5e4
-  #   then:
-  #     - if: ADP > 1e6
-  #       then:
-  #         - divide()
+  - if: Ribosome > 5e4
+    then:
+      - if: ATP > 1e9
+        then:
+          - divide()
+  - if: Ribosome > 5e4
+    then:
+      - if: ADP > 1e9
+        then:
+          - divide()
   # - if: Ribosome > 1
   #   then:
   #     - all = 0
