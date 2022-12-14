@@ -14,10 +14,6 @@ MoleculeTable:
   - name: Amino acids
     symbol: brick
     daltons: 100
-  - name: GTP
-    daltons: 523.18  # https://en.wikipedia.org/wiki/Guanosine_triphosphate
-  - name: GDP
-    daltons: 443.20  # https://en.wikipedia.org/wiki/Guanosine_diphosphate
   - name: Ribosome
     symbol: factory
     num-amino-acids: 12600  # https://bscb.org/learning-resources/softcell-e-learning/ribosome/.  4.2Mda, 1/3 protein.

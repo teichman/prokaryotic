@@ -156,7 +156,7 @@ TEST_CASE("Ribosome")
     MoleculeVals kms(pro);
     kms["ADPX"] = 1e-3;
     double kcat = 0.1;
-    ReactionType::ConstPtr rt(new ReactionType(pro, inputs, outputs, kms, kcat));
+    ReactionType::Ptr rt(new ReactionType(pro, inputs, outputs, kms, kcat));
     cell->dna_->synthesis_reactions_[pro.moleculeIdx("ATP Synthase")] = rt;
   }
   
@@ -882,10 +882,11 @@ TEST_CASE("ATP starvation due to reaction ordering")
   
   cell->membrane_permeabilities_["Amino acids"] = 1.0;
   cell->membrane_permeabilities_["Starch"] = 0.01;
-  cell->membrane_permeabilities_["Phosphate"] = 0.01;
+  cell->membrane_permeabilities_["Phosphate"] = 0;
 
   cell->cytosol_contents_["Amino acids"] = 6e7;  // 100 mM sounds typical
-  cell->cytosol_contents_["ATP"] = 6e6;  // 10 mM sounds typical, maybe a bit high
+  cell->cytosol_contents_["ATP"] = 3e6;
+  cell->cytosol_contents_["ADP"] = 3e6;
   cell->cytosol_contents_["Phosphate"] = 6e6;
   cell->cytosol_contents_["Starch"] = 6e6;
   cell->cytosol_contents_["Glucose"] = 6e6;

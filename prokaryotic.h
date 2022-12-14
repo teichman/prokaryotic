@@ -138,18 +138,20 @@ public:
   double kcat_;  // max rate per tick (1 tick is 1 second?)
   std::string protein_name_;
   size_t protein_idx_;
+  MoleculeVals grad_; 
 
   ReactionType(const Prokaryotic& pro);
   ReactionType(const Prokaryotic& pro, const YAML::Node& yaml);
   ReactionType(const Prokaryotic& pro,
                const MoleculeVals& inputs, const MoleculeVals& outputs,
                const MoleculeVals& kms, double kcat);
-  virtual ~ReactionType() {}
   // For ribosomal protein synthesis reactions, we tell it what protein we are synthesizing, and it
   // assigns the inputs_, outputs_, kms_, kcat_, protein_name_, protein_idx_.
   ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protein);  
-  virtual void tick(Cell& cell, int num_protein_copies) const;
+  virtual ~ReactionType() {}
+  virtual void computeGrad(const Cell& cell, int num_protein_copies);
   std::string _str() const;
+  virtual void apply(Cell& cell) const;
 
 private:
   void parseHalfFormula(const std::vector<std::string>& tokens, size_t startidx, size_t endidx, MoleculeVals* mvals);
@@ -164,11 +166,18 @@ public:
   typedef std::shared_ptr<ProteasomeReactionType> Ptr;
 
   size_t target_idx_;
+  std::string target_name_;
   size_t atp_idx_;
   double input_denatured_;
+  // This bullshit is needed bc denatured vs not is currently handled with special logic.
+  // Obviously eventually it should all be a single big state vector that includes e.g.
+  // "ATP Synthase" and "ATP Synthase (D)".
+  // Anyway this is basically the element of grad_ that should exist but doesn't rn.
+  double num_denatured_to_remove_;
   
   ProteasomeReactionType(const Prokaryotic& pro, size_t target_idx);
-  void tick(Cell& cell, int num_protein_copies) const;  
+  void computeGrad(const Cell& cell, int num_protein_copies);
+  void apply(Cell& cell) const;
 };
 
 class DNA;
@@ -234,13 +243,14 @@ public:
   // This array contains the number of ribosomes assigned to each protein synthesis task.
   // ribosome_assignments_.vals_.sum() <= cytosol_contents_["Ribosome"].
   MoleculeVals ribosome_assignments_;
-  std::vector<ReactionType::ConstPtr> synthesis_reactions_;
+  std::vector<ReactionType::Ptr> synthesis_reactions_;
   std::vector<DNAIf::ConstPtr> dna_ifs_;
   // How many copies of each gene you have.  This affects ribosomal parallelization.
   //MoleculeVals gene_copy_numbers_;
   
   DNA(const Prokaryotic& pro);
-  void tick(Cell& cell);
+  void computeGrad(Cell& cell);
+  void apply(Cell& cell);
   std::string _str() const { return ""; }
   void setDefaultTranscriptionFactors();
   void assignRibosomes(Cell* cell);
@@ -344,7 +354,7 @@ public:
   MoleculeVals membrane_contents_;
   MoleculeVals membrane_permeabilities_;
   DNA::Ptr dna_;  // non-const so Prokaryotic can make changes to it.
-  std::vector<ProteasomeReactionType::ConstPtr> proteasome_reactions_;
+  std::vector<ProteasomeReactionType::Ptr> proteasome_reactions_;
   CellObserver obs_;
   
   Cell(const Prokaryotic& pro, const std::string& name);
@@ -360,6 +370,10 @@ public:
   void addDNAIf(const YAML::Node& yaml);
   void applyReactionResult(const MoleculeVals& flux, int protein_idx);
   void divide();
+  void scaleGradients();
+  void scaleNegativeGradientComponents(int midx, double scale);
+  void scaleNegativeGradientComponents(const MoleculeVals& scalefactors);
+  void assertPositiveCytosolVals() const;
 };
 
 class Biome : public Printable
