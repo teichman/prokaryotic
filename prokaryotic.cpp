@@ -814,12 +814,13 @@ std::string CellObserver::formatTransformationFlux(const std::string& prefix) co
   return oss.str();  
 }
 
-double CellObserver::averageDivisionHours() const
+double CellObserver::averageDivisionHours(size_t skip_first) const
 {
+  assert(skip_first < num_ticks_per_division_period_.size());
   double avg = 0;
-  for (size_t i = 0; i < num_ticks_per_division_period_.size(); ++i)
+  for (size_t i = skip_first; i < num_ticks_per_division_period_.size(); ++i)
     avg += num_ticks_per_division_period_[i] / (60 * 60.);
-  avg /= num_ticks_per_division_period_.size();
+  avg /= (num_ticks_per_division_period_.size() - skip_first);
   return avg;
 }
 
@@ -1626,7 +1627,7 @@ void Prokaryotic::step()
   
   MessageWrapper msg;
   msg.addField("molecule_names", moleculeNames());
-  msg.addField("division_hours", cells_[0]->obs_.averageDivisionHours());
+  msg.addField("division_hours", cells_[0]->obs_.averageDivisionHours(4));
   msg.addField("protein_io_flux", cells_[0]->obs_.protein_io_flux_.vals_);
   msg.addField("proteasome_action", cells_[0]->obs_.proteasome_action_.vals_);
   msg.addField("cytosol_contents_hist_avg", cells_[0]->obs_.cytosolContentsHistoryAvg().vals_);

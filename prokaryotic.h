@@ -328,7 +328,7 @@ public:
   void recordDivision();
   void recordCytosolContents(const MoleculeVals& cytosol_contents, const MoleculeVals& denatured);
   void tick();
-  double averageDivisionHours() const;
+  double averageDivisionHours(size_t skip_first = 0) const;
   std::string formatTransformationFlux(const std::string& prefix = "") const;
   std::string formatTransformationFluxMat(const std::string& prefix = "") const;
   std::string formatProteinIOFlux(const std::string& prefix = "") const;
