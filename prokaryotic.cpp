@@ -513,7 +513,7 @@ void Biome::tick()
   }
 }
 
-void Biome::step()
+void Biome::step(Comms& comms)
 {
   // Run the cell for a while.  Get a division rate.
   // Maybe we run the cell for a few hours, or a day, or something.
@@ -523,15 +523,20 @@ void Biome::step()
   for (Cell::Ptr cell : cells_) {
     cell->obs_.num_ticks_per_division_period_.clear();
     cell->obs_.cytosol_contents_history_.clear();
+    cell->obs_.cytosol_contents_denatured_history_.clear();
   }
   
-  double num_hours = 24;
-  for (int i = 0; i < int(num_hours * 60 * 60); ++i) {
-    if (i % (60*60) == 0) { 
+  double num_hours = 24 * 5;
+  int num_ticks = num_hours * 60 * 60;
+  for (int i = 0; i < num_ticks; ++i) {
+    if (i % (60*60) == 0) {
       cout << "." << std::flush;
+      //cout << cells_[0]->cytosol_contents_.str("  ") << endl;
+    }
+    if (i % (num_ticks / 20) == 0) {
       MessageWrapper msg;
       msg.addField("step_progress", (double)i / (num_hours * 60 * 60));
-      pro_.comms_.broadcast(msg);
+      comms.broadcast(msg);
     }
     tick();
   }
@@ -592,6 +597,15 @@ MoleculeVals CellObserver::cytosolContentsHistoryAvg() const
   for (size_t i = 0; i < cytosol_contents_history_.size(); ++i)
     avg.vals_ += cytosol_contents_history_[i];
   avg.vals_ /= cytosol_contents_history_.size();
+  return avg;
+}
+
+MoleculeVals CellObserver::cytosolContentsDenaturedHistoryAvg() const
+{
+  MoleculeVals avg(pro_);
+  for (size_t i = 0; i < cytosol_contents_denatured_history_.size(); ++i)
+    avg.vals_ += cytosol_contents_denatured_history_[i];
+  avg.vals_ /= cytosol_contents_denatured_history_.size();
   return avg;
 }
 
@@ -787,17 +801,10 @@ void CellObserver::recordProteinSynthAndDen(const MoleculeVals& flux)
   }
 }
 
-void CellObserver::recordCytosolContents(const MoleculeVals& cytosol_contents)
+void CellObserver::recordCytosolContents(const MoleculeVals& cytosol_contents, const MoleculeVals& denatured)
 {
   cytosol_contents_history_.push_back(cytosol_contents.vals_);
-  // // adenosine invariant
-  // if (cytosol_contents.hasMolecule("ATP") && cytosol_contents.hasMolecule("ADP")) {
-  //   if (!cytosol_contents_history_.empty()) {
-  //     int ainv1 = cytosol_contents["ATP"] + cytosol_contents["ADP"];  
-  //     int ainv0 = cytosol_contents_history_.back()[0] + cytosol_contents_history_.back()[1];
-  //     assert(ainv0 == ainv1);  ainv1 += ainv0;
-  //   }
-  // }
+  cytosol_contents_denatured_history_.push_back(denatured.vals_);
 }
 
 void CellObserver::recordDivision()
@@ -931,7 +938,7 @@ void Cell::setCytosolContentsByConcentrations(const MoleculeVals& cytosol_concen
 void Cell::tick(const Biome& biome)
 {
   obs_.tick();
-  obs_.recordCytosolContents(cytosol_contents_);
+  obs_.recordCytosolContents(cytosol_contents_, cytosol_contents_denatured_);
   
   // Passive membrane permeations
   // Should make this depend on cell volume (once the volume changes..)
@@ -1334,8 +1341,6 @@ void Prokaryotic::run()
     step();
     double seconds = double(std::chrono::duration_cast<std::chrono::nanoseconds>(HRC::now() - start).count()) * 1e-9;
     cout << "seconds / step: " << seconds << endl;
-
-    cout << cells_[0]->obs_.cytosolContentsHistoryAvg().str("  ") << endl;
     
     string response = comms_.waitForResponses();
     applyClientResponse(response);
@@ -1383,13 +1388,21 @@ void Prokaryotic::step()
   assert(biomes_.size() == 1);
   assert(cells_.size() == 1);
   for (auto biome : biomes_)
-    biome->step();
+    biome->step(comms_);
 
+  cout << cells_[0]->obs_.cytosolContentsHistoryAvg().str("  ") << endl;
+  cout << "Denatured avg: " << endl;
+  cout << cells_[0]->obs_.cytosolContentsDenaturedHistoryAvg().str("  ") << endl;
+  cout << "Denatured instantaneous: " << endl;
+  cout << cells_[0]->cytosol_contents_denatured_.str("  ") << endl;
+  
   MessageWrapper msg;
   msg.addField("molecule_names", moleculeNames());
+  msg.addField("division_hours", cells_[0]->obs_.averageDivisionHours());
   msg.addField("protein_io_flux", cells_[0]->obs_.protein_io_flux_.vals_);
   msg.addField("proteasome_action", cells_[0]->obs_.proteasome_action_.vals_);
   msg.addField("cytosol_contents_hist_avg", cells_[0]->obs_.cytosolContentsHistoryAvg().vals_);
+  msg.addField("cytosol_contents_denatured_hist_avg", cells_[0]->obs_.cytosolContentsDenaturedHistoryAvg().vals_);
   msg.addField("cytosol_concentration_hist_avg", countsToConcentrations(cells_[0]->obs_.cytosolContentsHistoryAvg(), cells_[0]->um3_).vals_);
   comms_.broadcast(msg);
 }

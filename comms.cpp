@@ -7,7 +7,7 @@ void MessageWrapper::addField(const std::string& name, double val)
 {
   append(name);
   append(dtype::Double);
-  uint8_t const *dptr = reinterpret_cast<uint8_t const *>(val);
+  uint8_t const *dptr = reinterpret_cast<uint8_t*>(&val);
   for (int i = 0; i < 8; ++i)
     data_.push_back(dptr[i]);
 }

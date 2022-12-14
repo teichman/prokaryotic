@@ -9,6 +9,7 @@ import pickle
 import sys
 from rich.markdown import Markdown
 from rich import print
+from rich.progress import Progress
 from rich.tree import Tree
 from rich.console import Console
 from rich.table import Table
@@ -27,6 +28,7 @@ g_stop = False
 
 class MessageInterpreter:
 
+    Double = 8
     String = 10
     Strings = 11
     ArrayXd = 12
@@ -66,6 +68,8 @@ class MessageInterpreter:
             val, idx = self._interpretArrayXd(msg, idx)
         elif typecode == self.Strings:
             val, idx = self._interpretStrings(msg, idx)
+        elif typecode == self.Double:
+            val, idx = self._interpretDouble(msg, idx)
         else:
             assert False
             
@@ -88,6 +92,11 @@ class MessageInterpreter:
             string, idx = self._interpretString(msg, idx)
             strings.append(string)
         return strings, idx
+    
+    def _interpretDouble(self, msg, idx):
+        val = struct.unpack_from('d', msg, offset=idx)[0]
+        idx += 8
+        return val, idx
     
     def _interpretArrayXd(self, msg, idx):
         rows = struct.unpack_from('i', msg, offset=idx)[0]
@@ -212,7 +221,7 @@ class Comms:
 class View:
     def __init__(self):
         self.console = Console()
-        self.layout = Layout(ratio=0.95, name="layout")
+        self.layout = Layout(ratio=1.0, name="layout")
         self.layout.split_column(Layout(name="header", ratio=1),
                                  Layout(name="mainrow", ratio=10),
                                  Layout(name="footer", ratio=1))
@@ -260,13 +269,19 @@ class View:
         self.layout["mainrow"]["main"].update(Panel("Nothing to see here yet...",
                                                     border_style="dim white"))
 
-    def draw_planetary_metadata(self):
+    def draw_planetary_metadata(self, msgdict=None):
+        if msgdict:
+            dtstr = f"{msgdict['division_hours']:2.1f}"
+        else:
+            dtstr = "TBD"
+            
         pm = self.layout["mainrow"]["left_sidebar"]["metadata"]
         st = Table()
         st.add_column("Species")
         st.add_column("Doubling\ntime\n(hours)")
-        st.add_row("E. coli", "7.3")
-        st.add_row("S. streptococcus", "4.52")
+        st.add_row("E. coli", dtstr)
+        st.add_row("M. magneticum", "4.52")
+
         pm.update(Panel(st,
                         title="Planetary metadata",
                         border_style="dim white"))
@@ -280,11 +295,13 @@ class View:
         midx = self.mname_to_idx(mname)
         logger.log(f"Drawing transformation chain for {mname}, molecule idx {midx}")
         
-    def draw_protein_io(self):
+    def draw_main_dashboard(self):
+        if self.msgdict is None:
+            return
         self.grid = self.generate_grid(self.msgdict)
         self.layout["mainrow"]["main"].update(Panel(self.grid,
                                                     border_style="dim white",
-                                                    title='[bold]Protein IO[/]'))
+                                                    title='[bold]Cytosol dashboard[/]'))
         self.draw()
 
     def draw_dna_programming(self):
@@ -302,10 +319,12 @@ class View:
 
     def draw_cmds(self):
         cmds = Tree("Commands")
-        cmds.add("p :: Protein IO")
-        cmds.add("d :: View DNA Programming")
-        cmds.add("a :: Advance simulation")
-        cmds.add("q :: Quit")
+        cmds.add("d   :: Cytosol dashboard")
+        cmds.add("p   :: View DNA Programming")
+        cmds.add("RET :: Continue simulation")        
+        cmds.add("[dim]i   :: Inspect pathways[/]")
+        cmds.add("[dim]h   :: Molecule history[/]")
+        cmds.add("q   :: Quit")
         self.layout["mainrow"]["left_sidebar"]["cmds"].update(Panel(cmds, border_style="dim white"))
         self.draw()
 
@@ -315,9 +334,16 @@ class View:
         self.layout["header"].update(Text(text="", style=None, justify='center'))
         self.draw()
 
-    def new_msgdict(self, msgdict):
+    def update_progress(self, msgdict):
+        self.layout["footer"].update(Panel(f"Simulation progress: {msgdict['step_progress'] * 100:4.1f}%", border_style="dim white"))
+        logger.log(f"{msgdict['step_progress']=}")
+        self.draw()
+        
+    def new_step_data(self, msgdict):
+        self.layout["footer"].update(Panel("", border_style="dim white"))
+        self.draw_planetary_metadata(msgdict)
         self.msgdict = msgdict
-        self.draw_protein_io()
+        self.draw_main_dashboard()
         
     # def display(self, msgdict):
     #     self.msgdict = msgdict
@@ -326,13 +352,17 @@ class View:
     #     self.draw()
                 
     def generate_grid(self, msgdict):
+        logger.log(f"In generate_grid")
+        logger.log(f"{msgdict['cytosol_contents_denatured_hist_avg']=}")
         # Cytosol contents table
-        cct = Table(title="Molecule stats", title_style="black on rgb(255,255,255)", show_lines=False, highlight=True, row_styles=["", ""])
+        cct = Table(title="Molecule Stats (average)",
+                    title_style="black on rgb(255,255,255)", show_lines=False, highlight=True, row_styles=["", ""])
         cct.add_column("Molecule", justify="right", style="cyan", min_width=10)
         cct.add_column("Key".replace(' ', '\n'), style='cyan')
-        cct.add_column("Cytosol Contents (#)".replace(' ', '\n'), justify="center", style="magenta")
-        cct.add_column("Cytosol Concentrations (mM)".replace(' ', '\n'), justify="center", style="magenta")
-        cct.add_column("Proteasome\nAction\n(Avg #/sec)", justify="center", style="magenta")
+        cct.add_column("Cytosol Contents (#)".replace(' ', '\n'), justify="center")
+        cct.add_column("Cytosol Concentrations (mM)".replace(' ', '\n'), justify="center")
+        cct.add_column("Proteasome\nRecycling of\nDenatured\n(#/s)", justify="center")
+        cct.add_column("Denatured (#)".replace(' ', '\n'), justify="center")
         self.mname_map.clear()
         for idx, mname in enumerate(msgdict["molecule_names"]):
             key = chr(ord('A') + idx)
@@ -341,11 +371,13 @@ class View:
                         f"{key}",
                         val2str(msgdict["cytosol_contents_hist_avg"][idx]),
                         val2str(msgdict["cytosol_concentration_hist_avg"][idx]),
-                        val2str(msgdict["proteasome_action"][idx]))
+                        val2str(msgdict["proteasome_action"][idx]),
+                        val2str(msgdict["cytosol_contents_denatured_hist_avg"][idx]))
             
 
         # Protein IO table
-        piot = Table(title="Protein IO", title_style="black on rgb(255,255,255)", show_lines=False, highlight=True, row_styles=["", ""])
+        piot = Table(title="Protein IO (#/s)",
+                     title_style="black on rgb(255,255,255)", show_lines=False, highlight=True, row_styles=["", ""])
         piot.add_column("", justify="right", style="cyan", no_wrap=True)  # min_width=10, width=10
         col_indices_to_keep = []
         for idx, mname in enumerate(msgdict["molecule_names"]):
@@ -384,20 +416,25 @@ class Controller:
 
     def handle_keypress(self, key):
         # C^a comes through with ord(key) == 1.
-        # logger.log(f"Controller.handle_keypress got {key}")
+        logger.log(f"Controller.handle_keypress got {key}")
+        try:
+            logger.log(f"Controller.handle_keypress got {ord(key)=}")
+        except:
+            pass
+        
         if key == 'q':
             self.running = False
             return 'stop'
-        elif key == 'd':
-            self.view.draw_dna_programming()
         elif key == 'p':
-            self.view.draw_protein_io()
+            self.view.draw_dna_programming()
+        elif key == 'd':
+            self.view.draw_main_dashboard()
         elif len(key) == 1 and ord(key) >= ord('A') and ord(key) <= ord('Z'):
             self.view.draw_transformation_chain(key)
-        elif key == 'a':
+        elif ord(key) == 10:  # RET
             self.comms.advance()
         # elif key == "":
-        #     self.view.draw_protein_io()
+        #     self.view.draw_main_dashboard()
         # elif key == 'm':
         #     usermsg = Prompt.ask("Message to send")
         #     print(f"Sending {usermsg}")
@@ -416,7 +453,10 @@ class Controller:
 
     def handle_msgdict(self, msgdict):
         logger.log(f"In Controller.handle_msgdict with {msgdict}")
-        self.view.new_msgdict(msgdict)
+        if 'protein_io_flux' in msgdict:
+            self.view.new_step_data(msgdict)
+        elif 'step_progress' in msgdict:
+            self.view.update_progress(msgdict)
         
 def val2str(val):
     if val == 0:

@@ -39,7 +39,7 @@ MoleculeTable:
     daltons: 180.156
   - name: ADP Synthase
     num-amino-acids: 5e3
-    half-life-hours: 0.1  # magic!  This lets us synthesize fresh ATP/ADP, and then goes away when we have enough.
+    half-life-hours: 1.0  # magic!  This lets us synthesize fresh ATP/ADP, and then goes away when we have enough.
 
 ReactionTable:
   # Magical fresh ATP synthesis reaction.  I just made this bullshit up entirely.
@@ -51,7 +51,7 @@ ReactionTable:
       ATP: 1e-2
   - formula: Glucose + 30 ADP + 30 Phosphate -> 30 ATP
     protein: ATP Synthase
-    kcat: 3  # https://www.varsitytutors.com/biochemistry-help/atp-synthase
+    kcat: 30  # This says 3 but that seems too slow.  https://www.varsitytutors.com/biochemistry-help/atp-synthase
     KMs:
       Glucose: 1e-1
       ADP: 1e-2
@@ -66,7 +66,7 @@ BiomeTable:
   - name: Petri dish
     m3: 1e-5
     concentrations:
-      Amino acids: 10
+      Amino acids: 100
       Phosphate: 1
       Starch: 50
       
@@ -75,22 +75,22 @@ BiomeTable:
 # if, else, =, +=, <, >.
 # Also it's weird to use "X" for the concentration of something in the if statement, and then "X" for the TF target.
 # They're totally different things.
-DNA:
-  - if: ATP Synthase > 1e9
-    then:
-      - ATP Synthase = 0.01
-  - if: Amylase > 3e4
-    then:
-      - Amylase = 0.0
-  - if: Proteasome > 3e4
-    then:
-      - Proteasome = 0.0
-  - if: ATP > 6e6
-    then:
-      - ADP Synthase = 0.0
-  - if: Ribosome > 5e5
-    then:
-      - divide()
+# DNA:
+#   - if: ATP Synthase > 1e9
+#     then:
+#       - ATP Synthase = 0.01
+#   - if: Amylase > 3e4
+#     then:
+#       - Amylase = 0.0
+#   - if: Proteasome > 3e4
+#     then:
+#       - Proteasome = 0.0
+#   - if: ATP > 6e6
+#     then:
+#       - ADP Synthase = 0.0
+#   - if: Ribosome > 5e5
+#     then:
+#       - divide()
 
 
   # - formula: 2 X + ATP -> R + ADP + Phosphate

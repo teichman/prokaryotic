@@ -10,13 +10,13 @@ DNA:
   - if: Amylase > 3e4
     then:
       - Amylase = 0.0
-  - if: Proteasome > 3e4
+  - if: Proteasome > 1
     then:
       - Proteasome = 0.0
   - if: ATP > 1e8
     then:
       - ADP Synthase = 0.0
-  - if: Ribosome > 1e5
+  - if: Ribosome > 5e4
     then:
       - divide()
   # - if: Ribosome > 1

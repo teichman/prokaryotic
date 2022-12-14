@@ -245,6 +245,54 @@ public:
   void assignRibosomes(Cell* cell);
 };
 
+// class CellSnapshot
+// {
+// public:
+//   MoleculeMat proteasome_action_;
+  
+// };
+
+// class CellObserver2
+// {
+// public:
+//   // Everything in hist_ represents a complete lifecycle of the cell.
+//   std::vector<CellLifecycleHistory::Ptr> hist_;
+//   // When a division occurs, this gets added to hist_ and a new curr_ is created.
+//   // curr_ should never be used for computing statistics, only hist.
+//   CellLifecycleHistory::Ptr curr_;
+  
+//   double averageDivisionHours() const;
+// };
+
+// // Contains all the information about a cell from one fission event to the next.
+// class CellLifecycleHistory
+// {
+// public:
+//   typedef std::shared_ptr<CellLifecycleHistory> Ptr;
+//   typedef std::shared_ptr<const CellLifecycleHistory> ConstPtr;
+  
+//   std::vector<CellSnapshot> snapshots_;
+//   std::vector<Eigen::ArrayXd> proteasome_action_;
+// };
+
+Eigen::ArrayXd average(const std::vector<Eigen::ArrayXd>& arrays)
+{
+  assert(!arrays.empty());
+  Eigen::ArrayXd result = Eigen::ArrayXd::Zero(arrays[0].size());
+  for (auto arr : arrays)
+    result += arr;
+  return result / arrays.size();
+}
+
+Eigen::ArrayXXd average(const std::vector<Eigen::ArrayXXd>& arrays)
+{
+  assert(!arrays.empty());
+  Eigen::ArrayXXd result = Eigen::ArrayXXd::Zero(arrays[0].rows(), arrays[0].cols());
+  for (auto arr : arrays)
+    result += arr;
+  return result / arrays.size();
+}
+
 // Collects stats on the Cell as it does its thing.
 class CellObserver
 {
@@ -260,13 +308,14 @@ public:
   std::vector<double> num_ticks_per_division_period_;  // in ticks
   int num_ticks_since_last_division_;
   std::vector<Eigen::ArrayXd> cytosol_contents_history_;
+  std::vector<Eigen::ArrayXd> cytosol_contents_denatured_history_;
   
   CellObserver(const Prokaryotic& pro);
   void recordReactionFlux(const MoleculeVals& flux, int protein_idx);
   void recordProteinSynthAndDen(const MoleculeVals& flux);
   void recordProteasomeAction(int target_idx_, double num_to_remove);
   void recordDivision();
-  void recordCytosolContents(const MoleculeVals& cytosol_contents);
+  void recordCytosolContents(const MoleculeVals& cytosol_contents, const MoleculeVals& denatured);
   void tick();
   double averageDivisionHours() const;
   std::string formatTransformationFlux(const std::string& prefix = "") const;
@@ -277,6 +326,7 @@ public:
   std::string formatCytosolContentsHistoryAvg(const std::string& prefix = "") const;
 
   MoleculeVals cytosolContentsHistoryAvg() const;
+  MoleculeVals cytosolContentsDenaturedHistoryAvg() const;
 };
 
 class Cell : public Printable
@@ -330,7 +380,7 @@ public:
   Biome(const Prokaryotic& pro, const YAML::Node& yaml);
   std::string _str() const;
   void tick();
-  void step();  
+  void step(Comms& comms);  
 };
 
 // Contains the whole simulation model
@@ -376,10 +426,9 @@ public:
   std::vector<Cell::Ptr> cells_;
 
   std::vector<ReactionType::Ptr> reaction_types_;
-  
-private:
   Comms comms_;
   
+private:
   MoleculeType::Ptr _molecule(const std::string& name) const {
     assert(hasMolecule(name));
     return molecule_map_.at(name);
