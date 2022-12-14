@@ -66,7 +66,7 @@ BiomeTable:
   - name: Petri dish
     m3: 1e-5
     concentrations:
-      Amino acids: 1
+      Amino acids: 10
       Phosphate: 1
       Starch: 50
       
