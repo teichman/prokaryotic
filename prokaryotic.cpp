@@ -289,8 +289,11 @@ void ProteasomeReactionType::computeGrad(const Cell& cell, int num_protein_copie
   // not worry about it for now, or ever.
   // (It probably should be that it's the concentration of all denatured proteins that matters for reaction rate.)
 
-  if (num_protein_copies <= 0)
+  if (num_protein_copies <= 0) {
     grad_.vals_.setZero();
+    num_denatured_to_remove_ = 0;
+    return;
+  }
   
   //double conc_den = countsToConcentrations(cell.cytosol_contents_denatured_.vals_.sum(), cell.um3_);
   double conc_den = countToConcentration(cell.cytosol_contents_denatured_[target_idx_], cell.um3_);
@@ -313,25 +316,46 @@ void ProteasomeReactionType::computeGrad(const Cell& cell, int num_protein_copie
   num_denatured_to_remove_ = input_denatured_ * rate * num_protein_copies;
   grad_.vals_ = (outputs_.vals_ - inputs_.vals_) * rate * num_protein_copies;
 
-  // This is now handled on a whole-cell level.
-  // // It's not unlikely that tick() is not granular enough and we end up making something negative.
-  // // In that case, shrink the flux so that minimum final cytosol_contents_ result will be zero.
-  // double multiplier = 1.0;
-  // multiplier = std::min(multiplier, 0.999 * cell.cytosol_contents_denatured_.vals_[target_idx_] / num_denatured_to_remove);
-  // for (int i = 0; i < cell.cytosol_contents_.vals_.size(); ++i)
-  //   if (flux.vals_[i] < 0)
-  //     multiplier = std::min(multiplier, -0.999 * cell.cytosol_contents_.vals_[i] / flux.vals_[i]);
-    
-  // flux.vals_ *= multiplier;
-  // num_denatured_to_remove *= multiplier;
+  // Competition between reactions is handled on a whole-cell level but we do a first scaling here to ensure that
+  // we aren't trying to make denatured proteins go negative.
+  // In general, eventually, all this should be handled as one big state vector of cell contents
+  // and all transformations of cell state are just gradient vectors, and there are no special cases.
+  // Making "denatured" be its own special state rather than just another dimension in MoleculeVals was probably a mistake.
+  double scale = std::min(1.0, 0.999 * cell.cytosol_contents_denatured_.vals_[target_idx_] / num_denatured_to_remove_);
+  if (scale < 1.0) {
+    cout << "Proteasome first stage scaling: " << scale << endl;
+    num_denatured_to_remove_ *= scale;
+    grad_.vals_ *= scale;
+  }
+
+  // cout << "after initial scaling: " << endl;
+  // cout << "  proteasome target: " << target_name_ << endl;
+  // cout << "  num_denatured_to_remove_: " << num_denatured_to_remove_ << endl;
+  // cout << "  cell.cytosol_contents_denatured_.vals_[target_idx_] " << cell.cytosol_contents_denatured_.vals_[target_idx_] << endl;
+  
+  assert(num_denatured_to_remove_ <= cell.cytosol_contents_denatured_.vals_[target_idx_]);
 }
 
 void ProteasomeReactionType::apply(Cell& cell) const
 {
-  // Should probably encapsulate these two.
-  cell.cytosol_contents_denatured_.vals_[target_idx_] -= num_denatured_to_remove_;
-  cell.obs_.recordProteasomeAction(target_idx_, num_denatured_to_remove_);
-  cell.applyReactionResult(grad_, protein_idx_);  
+  // Not sure where this edge case is coming from but we're going to throw out this bullshit way of managing denatured
+  // proteins shortly anyway.
+  double nr = num_denatured_to_remove_;
+  if (num_denatured_to_remove_ < 1.0 && num_denatured_to_remove_ > 0.0 && cell.cytosol_contents_denatured_.vals_[target_idx_] == 0) {
+    nr = 0;
+  }
+  else if (num_denatured_to_remove_ > cell.cytosol_contents_denatured_.vals_[target_idx_]) {
+    cout << "proteasome target: " << target_name_ << endl;
+    cout << "num_denatured_to_remove_: " << num_denatured_to_remove_ << endl;
+    cout << "cell.cytosol_contents_denatured_.vals_[target_idx_] " << cell.cytosol_contents_denatured_.vals_[target_idx_] << endl;
+    assert(false);
+  }
+  
+  cell.cytosol_contents_denatured_.vals_[target_idx_] -= nr;
+  cell.obs_.recordProteasomeAction(target_idx_, nr);
+  cell.applyReactionResult(grad_, protein_idx_);
+
+  cell.assertSanity();
 }
  
 double rateMM(double substrate_concentration, double km, double kcat)
@@ -967,7 +991,7 @@ void Cell::tick(const Biome& biome)
   // basically flux = -p (cin - cout), the same model I guessed at originally but per unit surface area.
   // Eventually: tag metabolic intermediates with a charge to make them not permeate the membrane.
   // Positively charged molecules really do not want to go through.
-  cout << "Phosphate before membrane permeation: " << cytosol_contents_["Phosphate"] << endl;
+  //cout << "Phosphate before membrane permeation: " << cytosol_contents_["Phosphate"] << endl;
   
   MoleculeVals cytosol_concentrations = cytosolConcentrations();
   auto deltas = (biome.concentrations_.vals_ - cytosol_concentrations.vals_);
@@ -975,7 +999,7 @@ void Cell::tick(const Biome& biome)
   auto step = membrane_permeabilities_.vals_ * deltas;
   cytosol_concentrations.vals_ += step;
   setCytosolContentsByConcentrations(cytosol_concentrations);
-  cout << "Phosphate after membrane permeation: " << cytosol_contents_["Phosphate"] << endl;
+  //cout << "Phosphate after membrane permeation: " << cytosol_contents_["Phosphate"] << endl;
   
   // Apply degredation of molecules.
   // TODO: Have a member of MoleculeType (or, better, ProteinType) that indicates if the protein is denatured or not.
@@ -1020,7 +1044,6 @@ void Cell::tick(const Biome& biome)
   // Look through all ReactionTypes and proportionally scale their grad_ values so nothing goes negative
   // when we apply them to the cell.
   scaleGradients();
-  assertPositiveCytosolVals();
 
   // Apply grads to cell contents.
   dna_->apply(*this);
@@ -1030,11 +1053,17 @@ void Cell::tick(const Biome& biome)
     prt->apply(*this);
   
   // Check for bugs.
-  assertPositiveCytosolVals();
+  assertSanity();
   
   // rounding
   cytosol_contents_.probabilisticRound();
   cytosol_contents_denatured_.probabilisticRound();
+}
+
+void Cell::assertSanity() const
+{
+  assertPositiveCytosolVals();
+  assertPositiveDenaturedCytosolVals();
 }
 
 void Cell::assertPositiveCytosolVals() const
@@ -1043,6 +1072,17 @@ void Cell::assertPositiveCytosolVals() const
     if (cytosol_contents_.vals_[i] < -1e-6) {
       cout << "ERROR: negative cytosol_contents_ value." << endl;
       cout << cytosol_contents_.str("  ") << endl;
+      assert(false);
+    }
+  }
+}
+
+void Cell::assertPositiveDenaturedCytosolVals() const
+{
+  for (int i = 0; i < cytosol_contents_denatured_.vals_.size(); ++i) {
+    if (cytosol_contents_denatured_.vals_[i] < -1e-6) {
+      cout << "ERROR: negative cytosol_contents_denatured_ value." << endl;
+      cout << cytosol_contents_denatured_.str("  ") << endl;
       assert(false);
     }
   }
@@ -1081,12 +1121,10 @@ void Cell::scaleGradients()
   for (auto rt : pro_.reaction_types_)
     accumulateGradComponents(rt->grad_, &total_grad, &ngc, &pgc);
 
-  cout << "============================================================" << endl;
-  cout << "cytosol_contents_" << endl << cytosol_contents_.str("  ") << endl;
-  cout << "ngc (before scaling)" << endl << ngc.str("  ") << endl;
-  cout << "pgc (before scaling)" << endl << pgc.str("  ") << endl;
-  //cout << "total_grad (before scaling)" << endl << total_grad.str("  ") << endl;
-  
+  // cout << "============================================================" << endl;
+  // cout << "cytosol_contents_" << endl << cytosol_contents_.str("  ") << endl;
+  // cout << "ngc (before scaling)" << endl << ngc.str("  ") << endl;
+  // cout << "pgc (before scaling)" << endl << pgc.str("  ") << endl;
 
   MoleculeVals scalefactors(pro_);
   scalefactors.vals_.setOnes();
@@ -1100,11 +1138,7 @@ void Cell::scaleGradients()
     double scale = 0.999 * (-cytosol_contents_[i] / ngc[i]);
     if (scale >= 1.0) continue;
     scalefactors.vals_[i] = scale;
-    // // For each reaction type that contributes to reduction of this molecule, scale its entire grad_ back by that amount
-    // scaleNegativeGradientComponents(i, scale);
-    // cout << "Scaling back reactions that consume " << pro_.moleculeName(i) << " by " << scale << endl;
   }
-
   // For each reaction, for each input, check the scale factor for that input molecule.
   // Apply the smallest one (but not both) to reaction grad_.
   scaleNegativeGradientComponents(scalefactors);
@@ -1121,12 +1155,9 @@ void Cell::scaleGradients()
   for (auto rt : pro_.reaction_types_)
     accumulateGradComponents(rt->grad_, &total_grad2, &ngc2, &pgc2);
 
-
-  cout << "ngc2 (after scaling)" << endl << ngc2.str("  ") << endl;
-  cout << "pgc2 (after scaling)" << endl << pgc2.str("  ") << endl;
-  // cout << "total_grad2 (after scaling)" << endl << total_grad2.str("  ") << endl;
-  cout << "total_grad2 + cytosol_contents_: " << endl << MoleculeVals(pro_, total_grad2.vals_ + cytosol_contents_.vals_).str("  ") << endl;
-  //cin.ignore();
+  // cout << "ngc2 (after scaling)" << endl << ngc2.str("  ") << endl;
+  // cout << "pgc2 (after scaling)" << endl << pgc2.str("  ") << endl;
+  // cout << "total_grad2 + cytosol_contents_: " << endl << MoleculeVals(pro_, total_grad2.vals_ + cytosol_contents_.vals_).str("  ") << endl;
   
   assert(((total_grad2.vals_ + cytosol_contents_.vals_) >= 0).all());
   for (int i = 0; i < cytosol_contents_.vals_.size(); ++i)
@@ -1146,7 +1177,7 @@ void Cell::scaleNegativeGradientComponents(const MoleculeVals& scalefactors)
         scale_to_apply = std::min(scale_to_apply, scalefactors[midx]);
     if (scale_to_apply < 1.0) {
       rt->grad_.vals_ *= scale_to_apply;
-      cout << "Scaled back " << rt->protein_name_ << " reaction speed by " << scale_to_apply << endl;
+      //cout << "Scaled back " << rt->protein_name_ << " reaction speed by " << scale_to_apply << endl;
     }
   }
 
@@ -1155,9 +1186,11 @@ void Cell::scaleNegativeGradientComponents(const MoleculeVals& scalefactors)
     for (int midx = 0; midx < prt->grad_.size(); ++midx)
       if (prt->grad_[midx] < 0)
         scale_to_apply = std::min(scale_to_apply, scalefactors[midx]);
+    assert(scale_to_apply > 0.0);
     if (scale_to_apply < 1.0) {
       prt->grad_.vals_ *= scale_to_apply;
-      cout << "Scaled back " << prt->protein_name_ << "-" << prt->target_name_ << " reaction speed by " << scale_to_apply << endl;
+      prt->num_denatured_to_remove_ *= scale_to_apply;
+      //cout << "Scaled back " << prt->protein_name_ << "-" << prt->target_name_ << " reaction speed by " << scale_to_apply << endl;
     }
   }
 
@@ -1170,27 +1203,11 @@ void Cell::scaleNegativeGradientComponents(const MoleculeVals& scalefactors)
         scale_to_apply = std::min(scale_to_apply, scalefactors[midx]);
     if (scale_to_apply < 1.0) {
       srt->grad_.vals_ *= scale_to_apply;
-      cout << "Scaled back " << srt->protein_name_ << " reaction speed by " << scale_to_apply << endl;
+      //cout << "Scaled back " << srt->protein_name_ << " reaction speed by " << scale_to_apply << endl;
     }
   }
   
 }
-
-void Cell::scaleNegativeGradientComponents(int midx, double scale)
-{
-  // For each reaction type that contributes to reduction of this molecule, scale its entire grad_ back by that amount
-  for (auto srt : dna_->synthesis_reactions_)
-    if (srt)
-      if (srt->grad_[midx] < 0)
-        srt->grad_.vals_ *= scale;
-  for (auto prt : proteasome_reactions_)
-    if (prt->grad_[midx] < 0)
-        prt->grad_.vals_ *= scale;
-  for (auto rt : pro_.reaction_types_)
-    if (rt->grad_[midx] < 0)
-      rt->grad_.vals_ *= scale;
-}
-
 
 DNAIf::DNAIf(const Prokaryotic& pro, Cell& cell, const YAML::Node& yaml) :
   pro_(pro),

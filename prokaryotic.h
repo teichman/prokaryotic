@@ -374,6 +374,8 @@ public:
   void scaleNegativeGradientComponents(int midx, double scale);
   void scaleNegativeGradientComponents(const MoleculeVals& scalefactors);
   void assertPositiveCytosolVals() const;
+  void assertPositiveDenaturedCytosolVals() const;  
+  void assertSanity() const;
 };
 
 class Biome : public Printable

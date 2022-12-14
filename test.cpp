@@ -177,14 +177,14 @@ TEST_CASE("Ribosome")
     //cout << cell->str() << endl;
   }
   cout << cell->str() << endl;
-  CHECK(cell->cytosol_contents_["ATP Synthase"] > 20);
+  CHECK(cell->cytosol_contents_["ATP Synthase"] > 200);
 
   cout << "----------------------------------------" << endl;
   cout << "ATP Synthase breaks down and we run out of building blocks. " << endl;
   for (int i = 0; i < 10000; ++i)
     pro.tick();
   cout << cell->str() << endl;
-  CHECK(cell->cytosol_contents_["ATP Synthase"] < 10);
+  CHECK(cell->cytosol_contents_["ATP Synthase"] < 15);
 }
 
 TEST_CASE("YAML")
@@ -778,7 +778,7 @@ TEST_CASE("Full system so far")
 
   // Confirm that ATP+ADP is conserved.
   // This should be an exact check, but you know what, whatever.  Eventually I'll track that down.
-  CHECK(cell->cytosol_contents_["ATP"] + cell->cytosol_contents_["ADP"] == doctest::Approx(num_orig_atp));
+  CHECK(cell->cytosol_contents_["ATP"] + cell->cytosol_contents_["ADP"] == doctest::Approx(num_orig_atp).epsilon(1e-4));
   
   // ostringstream oss;
   // oss << "MoleculeTable:" << endl
@@ -902,8 +902,10 @@ TEST_CASE("ATP starvation due to reaction ordering")
     pro.tick();
   }
 
+  cout << "Final cytosol_contents_:" << endl;
   cout << cell->cytosol_contents_.str("  ") << endl;
-  CHECK(cell->cytosol_contents_["ATP"] > doctest::Approx(0));
+  // Not really sure what this number should be, but nowhere close to zero.
+  CHECK(cell->cytosol_contents_["ATP"] > doctest::Approx(1e5)); 
 }
 
 
