@@ -27,7 +27,9 @@ int main(int argc, char** argv)
   // Dunno how much of these we need, we'll see where they end up at steady state.
   cell->cytosol_contents_["ATP Synthase"] = 1e7;
   cell->cytosol_contents_["Amylase"] = 1e3;
-  cell->cytosol_contents_["Ribosome"] = 5e5;
+  // If you start this out too high, they consume all the ATP and starve everything else.
+  // ... including the reactions that create more ATP.
+  cell->cytosol_contents_["Ribosome"] = 1e4; 
   cell->cytosol_contents_["Proteasome"] = 3e4;
   
   for (const YAML::Node& dnaif : YAML::LoadFile("dna.yaml")["DNA"])

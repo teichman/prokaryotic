@@ -119,6 +119,9 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
 {
   if (num_protein_copies == 0)
     return;
+
+  // debugging
+  // ArrayXd rates = ArrayXd::Ones(inputs_.vals_.size()) * -1;
   
   // Simplify: Assume that everything follows Michaelis-Menten kinetics, even for the (presumably majority) of reactions
   // that have multiple substrates.
@@ -127,8 +130,11 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
   MoleculeVals concentrations = cell.cytosolConcentrations();
   double minrate = std::numeric_limits<double>::max();
   for (int i = 0; i < inputs_.vals_.size(); ++i)
-    if (inputs_[i] > 0)
-      minrate = std::min(minrate, rateMM(concentrations[i], kms_[i], kcat_));
+    if (inputs_[i] > 0) {
+      double r = rateMM(concentrations[i], kms_[i], kcat_);
+      minrate = std::min(minrate, r);
+      // rates[i] = r;
+    }
   double rate = minrate;  // reactions / tick (1 tick == 1 second?)
   assert(rate >= 0);
 
@@ -136,6 +142,17 @@ void ReactionType::tick(Cell& cell, int num_protein_copies) const
   assert((outputs_.vals_ >= 0.0).all());
   //cout << "Reaction running with rate " << rate << " and num_protein_copies " << num_protein_copies << endl;
 
+  // cout << "Reaction by protein " << protein_name_ << " has " << cell.cytosol_contents_["ATP"] << " ATP available." << endl;
+  
+  // if (protein_name_ == "ADP Synthase") {
+  //   cout << "=== ADP Synthase reaction debugging ===" << endl;
+  //   cout << "  Rate: " << rate << endl;
+  //   cout << "  Rates: " << rates.transpose() << endl;
+  //   cout << "  Rates: " << endl << MoleculeVals(pro_, rates).str("    ") << endl;
+  //   cout << "  Cytosol: " << endl << cell.cytosol_contents_.str("    ") << endl;
+  //   cin.ignore();
+  // }
+  
   MoleculeVals flux(pro_);
   flux.vals_ = (outputs_.vals_ - inputs_.vals_) * rate * num_protein_copies;
 
@@ -175,6 +192,7 @@ std::string ReactionType::_str() const
   return oss.str();
 }
 
+// This ReactionType is only used for ribosomes.
 ReactionType::ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protein_to_synthesize) :
   pro_(pro),
   inputs_(pro),
@@ -189,7 +207,6 @@ ReactionType::ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protei
   // ~5 ATP per amino acid added to a protein.
   inputs_["ATP"] = 5;
   inputs_["Amino acids"] = 1;
-  // We're trying out a probabilistic average synthesis model here.
   outputs_[protein_to_synthesize->name_] = 1.0 / protein_to_synthesize->num_amino_acids_;
   outputs_["ADP"] = 5;
   outputs_["Phosphate"] = 5;
@@ -197,15 +214,17 @@ ReactionType::ReactionType(const Prokaryotic& pro, MoleculeType::ConstPtr protei
   // I think for now we are just leaving these at some fixed reasonable number?
   // We're aiming for 20 AAs / second.  https://micro.magnet.fsu.edu/cells/ribosomes/ribosomes.html
   // Normal cellular ATP is 1-10 mM.  (ADP is typically 1000x lower.)
-  kms_["ATP"] = 0.5;  // Probably for typical cells with 1-10 mM ATP, the ATP concentration is not the limiting factor.
+  // Probably for typical cells with 1-10 mM ATP, the ATP concentration is not the limiting factor?
+  // Dunno, we'll say if ATP concentration goes to half of the lower end of the range, ribosomes slow down by half.
+  kms_["ATP"] = 0.5; 
   // http://book.bionumbers.org/what-are-the-concentrations-of-free-metabolites-in-cells/
   // glutamate 96 mM
   // aspartate 4.2 mM, valine 4.0, glutamine 3.8, alanine 2.5, arginine 0.57, asparagine 0.51, lysine 0.4, proline 0.38, methionine 0.14, ...
   // Ok so total AA concentration is maybe like 110 mM.  This is e. coli.
   // https://bionumbers.hms.harvard.edu/bionumber.aspx?s=n&v=2&id=107764
-  // Hm this says 150 mM in yeast.  Ok, good enough.  We'll set KM at around half of e. coli I guess.
+  // Hm this says 150 mM in yeast.  Ok, good enough.  We'll set KM at around half of typical e. coli AA concentration I guess.
   kms_["Amino acids"] = 60;
-  kcat_ = 20;
+  kcat_ = 20;  // 20 AA/s.
 }
 
 ReactionType::ReactionType(const Prokaryotic& pro) :
@@ -382,6 +401,11 @@ MoleculeVals::MoleculeVals(const Prokaryotic& pro) :
 {
   vals_ = ArrayXd::Zero(pro.moleculeTypes().size());
 }
+
+MoleculeVals::MoleculeVals(const Prokaryotic& pro, const ArrayXd& vals) :
+  pro_(pro),
+  vals_(vals)
+{}
 
 int MoleculeVals::nz() const
 {
@@ -988,6 +1012,10 @@ void Cell::tick(const Biome& biome)
   
   // Apply "DNA programming"
   dna_->tick(*this);
+
+  // At this point, all reactions should have computed their instantaneous rate and stored it in ReactionType::rate_.
+  // Now we'll apply these reaction rates to the cell contents.
+  // We'll accumulate all reaction rates, and scale them if necessary so nothing will go negative.
   
   cytosol_contents_.probabilisticRound();
   cytosol_contents_denatured_.probabilisticRound();

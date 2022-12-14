@@ -45,6 +45,7 @@ public:
   Eigen::ArrayXd vals_;
   
   MoleculeVals(const Prokaryotic& pro);
+  MoleculeVals(const Prokaryotic& pro, const Eigen::ArrayXd& vals);
 
   int nz() const;
   std::vector<int> nz_indices() const;
