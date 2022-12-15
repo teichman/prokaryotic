@@ -1,7 +1,6 @@
 import copy
 from rich.prompt import Prompt
 import readchar 
-from pynput.keyboard import Key, Listener
 import threading
 import math
 import argparse
@@ -46,7 +45,6 @@ class MessageInterpreter:
         while True:
             name, val, idx = self._interpretField(msg, idx)
             result[name] = val
-            logger.log(f"{idx=} {len(msg)=}")
             if idx == len(msg):
                 break
 
@@ -57,10 +55,8 @@ class MessageInterpreter:
         field_name_length = struct.unpack_from('i', msg, offset=idx)[0]
         idx += 4
         field_name = struct.unpack_from(f'{field_name_length}s', msg, offset=idx)[0].decode("UTF-8")
-        logger.log(f"{field_name=}")
         idx += field_name_length
         typecode = struct.unpack_from('B', msg, offset=idx)[0]
-        logger.log(f"{typecode=}")
         idx += 1
         if typecode == self.ArrayXXd:
             val, idx = self._interpretArrayXXd(msg, idx)
@@ -79,14 +75,12 @@ class MessageInterpreter:
         length = struct.unpack_from('i', msg, offset=idx)[0]
         idx += 4
         string = struct.unpack_from(f'{length}s', msg, offset=idx)[0].decode("UTF-8")
-        logger.log(f"{string=}")
         idx += length
         return string, idx
     
     def _interpretStrings(self, msg, idx):
         num_strings = struct.unpack_from('i', msg, offset=idx)[0]
         idx += 4
-        logger.log(f"{num_strings=}")
         strings = []
         for _ in range(num_strings):
             string, idx = self._interpretString(msg, idx)
@@ -101,7 +95,6 @@ class MessageInterpreter:
     def _interpretArrayXd(self, msg, idx):
         rows = struct.unpack_from('i', msg, offset=idx)[0]
         idx += 4
-        logger.log(f"{rows=}")
         vec = np.zeros((rows,))
         vec[:] = struct.unpack_from('d'*rows, msg, offset=idx)
         idx += rows*8
@@ -110,7 +103,6 @@ class MessageInterpreter:
     def _interpretArrayXXd(self, msg, idx):
         rows, cols = struct.unpack_from('ii', msg, offset=idx)
         idx += 8
-        logger.log(f"{rows=} {cols=}")
         mat = np.zeros((rows, cols))
         for c in range(cols):
             mat[:, c] = struct.unpack_from('d'*rows, msg, offset=idx)
@@ -191,7 +183,6 @@ class Comms:
         msg = self.sub_sock.recv()
         # print(f"Received msg: {type(msg)} {msg}")
         result = self.mi.interpret(msg)
-        # print(f"{result=}")
         return result
 
     def start(self):
@@ -337,7 +328,6 @@ class View:
 
     def update_progress(self, msgdict):
         self.layout["footer"].update(Panel(f"Simulation progress: {msgdict['step_progress'] * 100:4.1f}%", border_style="dim white"))
-        logger.log(f"{msgdict['step_progress']=}")
         self.draw()
         
     def new_step_data(self, msgdict):
@@ -354,7 +344,6 @@ class View:
                 
     def generate_grid(self, msgdict):
         logger.log(f"In generate_grid")
-        logger.log(f"{msgdict['cytosol_contents_denatured_hist_avg']=}")
         # Cytosol contents table
         cct = Table(title="Molecule Stats (average)",
                     title_style="black on rgb(255,255,255)", show_lines=False, highlight=True, row_styles=["", ""])
@@ -419,7 +408,7 @@ class Controller:
         # C^a comes through with ord(key) == 1.
         logger.log(f"Controller.handle_keypress got {key}")
         try:
-            logger.log(f"Controller.handle_keypress got {ord(key)=}")
+            logger.log(f"Controller.handle_keypress got {ord(key)}")
         except:
             pass
         
