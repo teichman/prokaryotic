@@ -280,7 +280,7 @@ class View:
         st.add_column("Species")
         st.add_column("Doubling\ntime\n(hours)")
         st.add_row("E. coli", dtstr)
-        st.add_row("M. magneticum", "4.52")
+        st.add_row("M. magneticum", "1.42")
 
         pm.update(Panel(st,
                         title="Planetary metadata",
@@ -324,6 +324,7 @@ class View:
         cmds.add("RET :: Continue simulation")        
         cmds.add("[dim]i   :: Inspect pathways[/]")
         cmds.add("[dim]h   :: Molecule history[/]")
+        cmds.add("[dim]b   :: Select biome[/]")
         cmds.add("q   :: Quit")
         self.layout["mainrow"]["left_sidebar"]["cmds"].update(Panel(cmds, border_style="dim white"))
         self.draw()

@@ -816,7 +816,9 @@ std::string CellObserver::formatTransformationFlux(const std::string& prefix) co
 
 double CellObserver::averageDivisionHours(size_t skip_first) const
 {
-  assert(skip_first < num_ticks_per_division_period_.size());
+  if (skip_first >= num_ticks_per_division_period_.size())
+    return std::numeric_limits<double>::infinity();
+  
   double avg = 0;
   for (size_t i = skip_first; i < num_ticks_per_division_period_.size(); ++i)
     avg += num_ticks_per_division_period_[i] / (60 * 60.);
