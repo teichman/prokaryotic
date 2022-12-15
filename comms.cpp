@@ -66,10 +66,9 @@ Comms::Comms() :
   sock_pub_(ctx_, zmq::socket_type::pub),
   sock_sub_(ctx_, zmq::socket_type::sub)
 {
-  sock_pub_.bind("tcp://127.0.0.1:53269");
+  sock_pub_.bind("tcp://*:53269");
   std::cout << "Connecting sock_pub_ to " << sock_pub_.get(zmq::sockopt::last_endpoint) << std::endl;
-  
-  sock_sub_.bind("tcp://127.0.0.1:53270");
+  sock_sub_.bind("tcp://*:53270");
   std::cout << "Connecting sock_sub_ to " << sock_sub_.get(zmq::sockopt::last_endpoint) << std::endl;
   sock_sub_.set(zmq::sockopt::subscribe, "");
 }

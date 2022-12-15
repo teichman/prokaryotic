@@ -159,10 +159,10 @@ class Comms:
         
         self.ctx = zmq.Context()
         self.sub_sock = self.ctx.socket(zmq.SUB)
-        self.sub_sock.connect("tcp://127.0.0.1:53269")
+        self.sub_sock.connect(f"tcp://{args.server}:53269")
         self.sub_sock.subscribe("")
         self.pub_sock = self.ctx.socket(zmq.PUB)
-        self.pub_sock.connect("tcp://127.0.0.1:53270")
+        self.pub_sock.connect(f"tcp://{args.server}:53270")
         self.mi = MessageInterpreter()
         logger.log("Connected.")
         self.start()
@@ -492,6 +492,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--savemsg", type=str)
     parser.add_argument("-m", "--msg", type=str)
+    parser.add_argument('-s', '--server', type=str, default='127.0.0.1')
     args = parser.parse_args()
 
     # Getting keypresses requires perms.
